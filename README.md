@@ -51,17 +51,6 @@ Il faut donc pouvoir, pour chaque demande :
   code MinIO ; il ajoute une dépendance et consomme des services prêts à l'emploi — exactement comme il consomme
   aujourd'hui le socle CRUD générique de `sigatt-lib-commons` ou la sécurité de `sigatt-lib-security-commons`.
 
-### 1.3 Ce qui existe déjà (état des lieux vérifié)
-
-- **Aucun code de gestion de fichiers** n'existe dans le backend (pas de `MultipartFile`, pas de MinIO/S3, pas de
-  configuration multipart). Le terrain est vierge : on conçoit proprement dès le départ.
-- **Pas encore d'entité `Demande`** dans les services métier — l'API documentaire sera donc conçue autour d'un
-  identifiant de demande (`demandeId`, UUID) et se branchera naturellement sur la future entité.
-- Le **référentiel** possède déjà le *catalogue* des pièces : `TypePieceJointe` (quels types de pièces existent)
-  et `TypePieceJointeTypeDemande` (quelles pièces sont requises/obligatoires pour quel type de demande). Le
-  module documentaire s'y raccordera en référençant `typePieceJointeId`.
-- Le **frontend** possède déjà le composant d'upload (`app-file-input`, PrimeNG, 10 Mo par défaut, mode multiple)
-  et le champ `file` du formulaire dynamique — seul un petit service Angular « multipart » manquera le moment venu.
 
 ---
 
@@ -207,10 +196,6 @@ plateforme ne connaîtra que l'interface maison `DocumentStorageService`. Si un 
 SDK v2 ou un autre stockage, **une seule classe** serait réécrite, dans la lib — pas les microservices. C'est
 l'abstraction qui protège, pas le choix du SDK.
 
-> ⚠️ Vigilance : la branche 9.x du SDK est une refonte (beaucoup d'exemples web basés sur 8.5.x ne compilent
-> plus tel quel) et repose sur OkHttp. La compatibilité avec notre stack très récente (Spring Boot 4, Java 25)
-> sera validée dès le premier build ; en cas de friction, l'abstraction permet de basculer sur AWS SDK v2 sans
-> impact sur les services.
 
 ### 4.3 Un bucket par microservice (et non un bucket partagé)
 
