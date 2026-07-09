@@ -1,0 +1,1 @@
+# sigtt-archi-minio
