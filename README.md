@@ -64,7 +64,7 @@ Il existe trois grandes façons de stocker des fichiers :
 |---|---|---|
 | **Système de fichiers** (disque local du serveur) | On écrit le fichier dans un dossier (`/var/sigatt/docs/…`) | Lié à UNE machine : si le service tourne sur 2 instances, elles ne voient pas les mêmes fichiers ; sauvegarde/réplication artisanales ; pas de contrôle d'accès fin |
 | **Base de données** (colonne `bytea`/BLOB) | Le fichier devient une ligne en base | La base grossit énormément, les sauvegardes deviennent lentes et lourdes, les performances de la base se dégradent — les SGBD ne sont pas faits pour servir des binaires |
-| **Stockage objet** (MinIO, Amazon S3, …) | Le fichier devient un **objet** identifié par une **clé**, dans un **bucket**, accessible via une **API HTTP** | ✅ C'est l'approche standard moderne pour les fichiers |
+| **Stockage objet** (MinIO, Amazon S3, …) | Le fichier devient un **objet** identifié par une **clé**, dans un **bucket**, accessible via une **API HTTP** |  C'est l'approche standard moderne pour les fichiers |
 
 Le **stockage objet** est un service dédié, séparé de l'application et de la base de données, dont le seul métier
 est de stocker et servir des binaires de façon **fiable**, **scalable** et **sécurisée**.
@@ -269,7 +269,7 @@ Une table SQL offre les requêtes, les index, les jointures futures avec `Demand
 | `bucket` | varchar | Auto-descriptif : la ligne dit où est le binaire, même si la config change |
 | `object_key` | varchar, unique | Le lien vers l'objet MinIO — la colonne pivot |
 | `checksum_sha256` | varchar | **Intégrité de bout en bout** : recalculable à tout moment pour prouver que le document n'a pas été altéré ; permet aussi la déduplication |
-| `etag` | varchar | Référence technique renvoyée par MinIO (vérifications de cohérence) — ⚠️ pas fiable comme empreinte de contenu (en multipart ce n'est pas le MD5), d'où le SHA-256 applicatif ci-dessus |
+| `etag` | varchar | Référence technique renvoyée par MinIO (vérifications de cohérence) —  pas fiable comme empreinte de contenu (en multipart ce n'est pas le MD5), d'où le SHA-256 applicatif ci-dessus |
 | *(hérité du socle)* | | `created_by`/`created_date` (= **auteur** et date du dépôt), `deleted` (suppression logique), `is_active`, `row_version` |
 
 **Pourquoi le SHA-256 en plus de l'ETag ?** L'ETag est calculé par MinIO et son format n'est pas garanti
