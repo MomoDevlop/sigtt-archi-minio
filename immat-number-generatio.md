@@ -15,7 +15,14 @@
 >   propriétaire, région de résidence, dates, motifs, carte précédente…) — extractions détaillées de
 >   mars-avril 2024, utilisées pour les **validations croisées** du §2.5 ;
 > - Le code existant : `sigatt-backend` (socle CRUD, dossier d'immatriculation SIGATT-233),
->   `sigatt-desktop` (saisie hors-ligne + synchronisation bulk), référentiels et seeds SQL.
+>   `sigatt-desktop` (saisie hors-ligne + synchronisation bulk), référentiels et seeds SQL ;
+> - Les **user stories** du produit (`user-stories/SIGATT_Jira_Import_VF_2026-07-07_Sprint_Juillet.csv`,
+>   218 récits / 9 modules — dont US-CG-001…023 pour l'immatriculation et **US-CG-008** qui fixe
+>   l'attribution automatique du numéro à la validation).
+>
+> **Déclinaisons** : `resume-regles-generation-immatriculation.md` (explicatif non technique) ·
+> `fiche-validation-metier-generation-immatriculation.md` (fiche à faire valider/signer par les
+> acteurs métier).
 
 ---
 
@@ -109,7 +116,7 @@ d'attribution legacy **différente**. Constats vérifiés :
    `DD`, `DE`, `DF`, `DG`, `DH` — **la première lettre reste `D`, la seconde avance dans l'alphabet
    privé**. Cette observation tranche empiriquement la mécanique du « croisement deux à deux » de
    l'art. 27 : `…9Z → DD → DE → DF → DG → DH → (DJ)…`. Front actuel observé : `1DH` (max 6615).
-4. **️ L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
+4. **⚠️ L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
    (`L…Z` × chiffres 1-9 et `DD…DG` × 1-9) sont remplis **en parallèle**, chacun à ~33 % de densité,
    avec des numéros **éparpillés sur tout l'espace 0001-9999** (ex. `5M` présent : 0001, 0007, 0009,
    0010, 0014… max 9999). Ce motif est la signature de **stocks de plaques pré-imprimées** écoulés
@@ -212,6 +219,53 @@ Analyse complète du repo (JavaFX 25 + SQLite, sync par lots de 20 vers
   saisie, il faudra **étendre le contrat de retour** (`DossierSyncSuccess`) — champ additionnel, rétrocompatible.
 
 ---
+
+### 3.3 Le workflow cible, confirmé par les user stories (juillet 2026)
+
+Les 23 stories du module Immatriculation dessinent la chaîne de traitement et **fixent le
+déclencheur de la génération** :
+
+```
+Usager en ligne (US-CG-001..005)          Opérateur de saisie SIM (US-CG-007, 011..023)
+   initier / corriger / suivre               saisie guichet des 14 natures de demande
+            │                                              │
+            ▼                                              │
+Opérateur de réception (US-CG-006)                         │
+   réceptionner / transmettre / retour correction          │
+            └──────────────────┬───────────────────────────┘
+                               ▼
+              VALIDATEUR SIM (US-CG-008) — interface web centrale
+     « Valider une demande (Le système attribue AUTOMATIQUEMENT un numéro
+       d'immatriculation) » · rejeter / envoyer en correction (motif obligatoire,
+       notification à l'initiateur)
+                               ▼
+              Production et remise des cartes (module PR)
+```
+
+- **Le point d'appel du moteur est donc l'action « Valider » du validateur SIM** (US-CG-008) —
+  la décision #3 du §12 est tranchée par le produit. Les demandes qui ne nécessitent pas de
+  nouveau numéro suivent le même workflow, sans appel au moteur.
+- **Systèmes externes** : IMPRO fournit les **immatriculations provisoires** (le champ
+  `numeroImmatriculationProvisoire` rappelle les données depuis IMPRO) — la série provisoire
+  W/WW est donc **hors périmètre SIGATT, confirmé** ; le CCVA fournit les données
+  véhicule/visite technique par le numéro de châssis ; l'ONI les identités par NIP.
+- Les stories éclairent aussi des champs du modèle : `structureBeneficiaire` et `referenceLettre`
+  servent à la **banalisation** (US-CG-020/021).
+
+**Effet de chaque nature de demande sur le numéro** (déduit des US + décret art. 3 — à faire
+valider par la fiche métier) :
+
+| Nature de demande (US) | Effet sur le numéro d'immatriculation |
+|---|---|
+| Première mise en circulation (US-CG-007) | **Tirage d'un nouveau numéro** à la validation |
+| Renouvellement papier/polycarbonate (US-CG-011/012) | Numéro conservé ; ⚠️ si l'ancienne plaque est au **format pré-2017** → tirage d'un numéro au format actuel (art. 50) ; si statut/régime modifiés à cette occasion → tirage |
+| Changement d'adresse (US-CG-013) | **Recomposition** : seuls les 2 chiffres de région changent — aucun tirage (art. 3) |
+| Changement de propriétaire (US-CG-014/015) | Numéro conservé si même statut et même régime ; **tirage** si le statut ou le régime douanier change (le formulaire capture le nouveau statut/régime) |
+| Gage / levée de gage (US-CG-016/017) | Numéro conservé (mention du créancier sur la carte) |
+| Duplicata perte/vol (US-CG-018/019) | Numéro conservé (réédition de la carte) |
+| Banalisation (US-CG-020) | **Tirage en série privée** (le véhicule d'État reçoit une plaque banalisée ; structure bénéficiaire + référence de lettre) |
+| Levée de banalisation (US-CG-021) | **Tirage dans la série du statut réel** (retour à la catégorie d'origine) |
+| Transformation (US-CG-022/023) | Numéro conservé — la story exclut explicitement la modification de « la série, la marque, le modèle et le type » |
 
 ## 4. Principes directeurs de la stratégie
 
@@ -403,30 +457,147 @@ Le **contexte** est intégralement constructible depuis un dossier d'immatricula
 La façade choisit la stratégie par `strategies.stream().filter(s -> s.supporte(categorie))` —
 l'ajout d'une famille (W/WW, PARTICULIER) est une nouvelle classe `@Component`, rien d'autre ne change.
 
-### 7.3 L'algorithme d'allocation (pseudo-code du cœur)
+### 7.3 L'algorithme complet en pseudo-code (6 blocs)
+
+Pseudo-code en français, lisible par un développeur comme par un analyste. Les numéros de
+scénarios `Sxx` renvoient au catalogue du §16.
+
+**Bloc 1 — Point d'entrée : la validation d'une demande (US-CG-008)**
 
 ```
-attribuer(contexte) :                                    # @Transactional (REQUIRED)
-  1. IDEMPOTENCE : si registre.findByDossierId(ctx.dossierId) existe -> retourner l'existant
-  2. strategie = résoudre(ctx.categorie)
-  3. cleSerie  = strategie.cleCompteur(ctx)              # ex. "PRIVE|VEHICULE" ou "CD|SERVICE|01"
-  4. boucle (max 50 tentatives) :
-       a. serie = repo.findAndLockByCleSerie(cleSerie)   # SELECT ... FOR UPDATE (création si absente,
-                                                         #   avec rattrapage de collision d'init — patron existant)
-       b. (groupe, ordre) = strategie.avancer(serie)     # ordre+1 ; si > borne : groupe suivant, ordre = min
+traiterValidationDemande(dossier) :                        # appelé par l'API "Valider" du validateur SIM
+  effet = effetSurNumero(dossier.typeDemande)              # donnée CONFIGURÉE par nature (cf. §15.4)
+
+  selon effet :
+    TIRAGE :                                               # ex. première mise en circulation (S01..S16)
+        contexte = construireContexte(dossier)             # bloc 2
+        numero   = attribuer(contexte)                     # bloc 3
+        vehicule.immatriculation = numero.format()
+
+    RECOMPOSITION_REGION :                                 # changement d'adresse (S34)
+        recomposerRegion(dossier.vehicule, nouvelleRegion) # bloc 5 — AUCUN tirage
+
+    CONSERVATION :                                         # duplicata, gage, transformation, renouvellement simple (S38, S41)
+        rien — le numéro existant reste inchangé
+
+    CONDITIONNEL_STATUT_REGIME :                           # changement de propriétaire, renouvellement (S35..S37)
+        si dossier.nouveauStatut != vehicule.statutActuel
+           OU dossier.nouveauRegime != vehicule.regimeActuel
+           OU formatPre2017(vehicule.immatriculation) :    # art. 50 : bascule des anciennes plaques
+             -> comme TIRAGE (l'ancien numéro RESTE consommé au registre)
+        sinon -> comme CONSERVATION
+
+    TIRAGE_SERIE_PRIVEE :                                  # banalisation (S39) : catégorie forcée PRIVE
+        contexte = construireContexte(dossier, categorieForcee = PRIVE)
+        numero   = attribuer(contexte)
+
+    TIRAGE_SERIE_STATUT :                                  # levée de banalisation (S40) : retour à la série du statut réel
+        comme TIRAGE (le statut réel est dans le dossier)
+```
+
+**Bloc 2 — Construction et contrôle du contexte**
+
+```
+construireContexte(dossier) :
+  statut = dossier.statutProprietaire
+  si statut absent            -> erreur "immatriculation.statut.requis"          (S23)
+  categorie = CategorieImmatriculation depuis statut.immatCode
+  si categorie == PARTICULIER -> erreur "hors génération automatique" (art. 42)
+
+  support = CYCLE si genre du véhicule == MOTOCYCLE, sinon VEHICULE
+  si typeVehicule absent      -> erreur "immatriculation.type.vehicule.requis"
+
+  selon categorie :
+    CD_* / CC_* / CMD : codeSuffixe = paysMandataire.code
+                        si absent -> erreur "immatriculation.mission.requise"    (S25)
+    IN_*              : codeSuffixe = organisationInternationale.code
+                        si absent -> erreur (idem)
+    autres            : codeSuffixe = codeRegion(résidence du propriétaire)
+                        repli : région du site d'enrôlement
+                        si indéterminable -> erreur "immatriculation.region.indeterminable" (S24)
+
+  mention = regimeDouanier.mentionSerie                    # NULL | IT | AT (cf. §15.3)
+  retour Contexte(dossierId, categorie, support, codeSuffixe, mention)
+```
+
+**Bloc 3 — Allocation sous verrou (le cœur anti-doublon)**
+
+```
+attribuer(contexte) :                                      # @Transactional (REQUIRED)
+  1. IDEMPOTENCE : si registre.findByDossierId(ctx.dossierId) existe
+       -> retourner la plaque déjà attribuée               # rejeu bulk/web sans double consommation (S31)
+
+  2. cas particulier CMD (pas de compteur) :
+       cleUnicite = "CMD|" + codeMission
+       TENTER insert registre -> violation = "mission a déjà sa plaque CMD" (S22)
+       retour "<codeMission> CMD"
+
+  3. strategie = résoudre(ctx.categorie)                   # pattern Strategy
+     cleSerie  = strategie.cleCompteur(ctx)                # "PRIVE|VEHICULE", "CD|SERVICE|01"...
+
+  4. boucle (max 50 tentatives) :                          # borne anti-boucle infinie (S33)
+       a. serie = repo.findAndLockByCleSerie(cleSerie)     # SELECT ... FOR UPDATE ; création si absente
+                                                           #   (collision d'init rattrapée — patron existant)
+       b. (groupe, ordre) = avancer(serie, strategie)      # bloc 4
        c. serie.groupeCourant = groupe ; serie.valeurCourante = ordre ; save
        d. numero = NumeroImmatriculation(ordre, groupe, ctx.codeSuffixe, ctx.mention, ctx.support)
-       e. TENTER insert registre(numero.cleUnicite(), ..., dossierId)
-            - succès  -> retourner numero               # le verrou tombe au commit de la transaction appelante
-            - violation d'unicité -> continuer la boucle # le numéro existait (legacy/saisie) : on le saute
-  5. échec après 50 -> SigattErrorResponse(CONFLICT, "immatriculation.generation.epuisement")
+       e. TENTER insert registre(numero.cleUnicite(), composants, source=GENEREE, dossierId)
+            succès               -> retourner numero       # verrou relâché au commit appelant (S29)
+            violation d'unicité  -> continuer              # numéro legacy/saisi : SAUTÉ à jamais (S30)
+
+  5. après 50 échecs -> SigattErrorResponse(CONFLICT, "immatriculation.generation.epuisement")
 ```
 
-Choix transactionnel : la façade s'exécute dans la **transaction de l'appelant** (`REQUIRED`).
-Si le traitement du dossier échoue après l'allocation, tout est annulé ensemble — ni plaque orpheline,
-ni compteur incrémenté pour rien. Dans le flux bulk, chaque dossier est déjà isolé en
-`REQUIRES_NEW` par `SingleImportRunner` (lib-commons) : l'attribution en hérite naturellement.
-Le verrou sur la ligne de compteur ne dure que le temps du traitement d'un dossier (millisecondes).
+**Bloc 4 — Avancement d'un compteur (dans la transaction verrouillée)**
+
+```
+avancer(serie, strategie) :
+  si serie.valeurCourante < strategie.borneMax(serie)      # 9999 ; 0999 pour bande SERVICE ; 999 pour W/WW futur
+      -> retour (serie.groupeCourant, valeurCourante + 1)
+
+  # la borne est atteinte : changement de groupe DANS le même verrou (aucune course possible, S17)
+  selon strategie :
+    SerieOrdinaire PRIVE :
+        groupeSuivant : chiffre 1->9 (G3->G4), puis lettre suivante de l'ALPHABET_PRIVE (G9->H1, S18),
+        après Z9 : croisement — 2e lettre parcourt l'alphabet (Z9 -> DD1, DD9 -> DE1..., S19)
+        -> retour (groupeSuivant, 1)
+    SerieOrdinaire à lettre fixe (A/B/C/P) :
+        chiffre 1->9 (A1->A2) ; après A9 : ERREUR "serie.categorielle.epuisee"   # décret muet — décision métier (§17)
+    Transport (T) :
+        chiffre 1->99 (T9->T10, S20) ; après T99 : ERREUR idem
+    Diplomatique (CD/CC/IN) :
+        bande SERVICE pleine (0999) ou PERSONNEL pleine (9999)
+        -> ERREUR "bande.diplomatique.pleine" (escalade métier, S21)
+
+ALPHABET_PRIVE = D E F G H J K L M N Q R S U V X Y Z       # sans I, O ; sans A, B, C, P, T, W
+```
+
+**Bloc 5 — Mutation de région (art. 3, sans tirage)**
+
+```
+recomposerRegion(vehicule, nouvelleRegion) :
+  ligne = registre.parCleUnicite(vehicule.plaque)          # la clé (groupe, ordre) ne change PAS
+  ligne.codeSuffixe   = nouvelleRegion.code
+  ligne.numeroComplet = reformater(...)
+  vehicule.immatriculation = ligne.numeroComplet           # l'ancienne combinaison n'est PAS libérée (S34)
+```
+
+**Bloc 6 — Validation d'une plaque saisie (INTERNE / bulk / plaque précédente)**
+
+```
+validerPlaqueSaisie(plaque, contexte) :
+  si champ "immatriculation précédente" ET formatPre2017(plaque) -> accepter sans registre (R12, S44)
+  si non conforme à la regex de sa catégorie (§11) -> erreur "immatriculation.format.invalide" (S27)
+  TENTER insert registre(source = INTERNE)                 # entre dans l'espace protégé (S28)
+    violation -> erreur "immatriculation.deja.existante" (sauf si rattachée au même véhicule)
+```
+
+**Choix transactionnel** : la façade s'exécute dans la **transaction de l'appelant** (`REQUIRED`).
+Si le traitement du dossier échoue après l'allocation, tout est annulé ensemble — ni plaque
+orpheline, ni compteur incrémenté (le « trou » n'apparaît que si l'échec survient APRÈS commit,
+cas rare et légal — S32). Dans le flux bulk, chaque dossier est déjà isolé en `REQUIRES_NEW` par
+`SingleImportRunner` (lib-commons) : l'attribution en hérite. Le verrou sur la ligne de compteur
+ne dure que le temps du traitement d'un dossier (millisecondes).
 
 ### 7.4 Avancement des groupes (`AlphabetSeriePrivee`)
 
@@ -676,7 +847,7 @@ risque de collision).
 |---|---|---|
 | 1 | **Codes région 01-13** : ~~déduits~~ → **validés empiriquement à 99 %** (croisement suffixe × région de résidence sur 1 M de motos, cf. §2.5). Position sur les régions créées après 2022 ? | Seed des 13 codes (annexe A) ; confirmation officielle = formalité |
 | 2 | **Arrêté conjoint des codes mission** (art. 44) pour CD/CC/CMD/IN : à obtenir pour figer les référentiels `pays_mandataire` / `organisation_internationale` (prod observée jusqu'au code 64) | Conserver les codes seedés actuels (validés contre prod) |
-| 3 | **Moment de l'attribution** : le dossier n'a pas encore de workflow (`statut`). Attribuer à la création consommerait des numéros pour des demandes avortées | Attribution à l'étape de **validation** du dossier (quand le workflow existera) ; en attendant, moteur exposé comme service interne + point d'appel unique |
+| 3 | **Moment de l'attribution** : ~~à décider~~ → **tranché par le produit** (US-CG-008 : « Valider une demande — le système attribue automatiquement un numéro d'immatriculation », interface web centrale, cf. §3.3) | Point d'appel unique = l'action « Valider » du validateur SIM ; les natures sans nouveau numéro n'appellent pas le moteur |
 | 4 | **Source du code région** : résidence du propriétaire (localité→région) ou site d'enrôlement ? | Résidence déclarée du propriétaire ; repli sur la région du site |
 | 5 | **Ordre du croisement deux lettres** : ~~inconnu~~ → **résolu empiriquement** par `prod-moto.txt` (première lettre fixe, seconde avançant dans l'alphabet privé : `DD→DE→DF→DG→DH→DJ…`) | Confirmation DGTTM de la poursuite (`DJ…DZ` puis `ED…`) — la mécanique est isolée dans `AlphabetSeriePrivee` |
 | 6 | **Motos** : hypothèse des **stocks pré-imprimés PROUVÉE** (corrélation numéro↔date ≈ 0, cf. §2.5) — reste à valider le **groupe de démarrage vierge `DJ`** ; obtenir une ré-extraction **CSV sans Excel** (les deux fichiers moto sont plafonnés à 2²⁰ lignes) ; définir la transition (les stocks legacy continueront d'être posés après la bascule → enregistrement au registre par saisie INTERNE) | Cf. §2.4, §2.5 et §10 |
@@ -725,6 +896,202 @@ risque de collision).
 - Build : `.\mvnw.cmd -pl sigatt-immatriculation-service -am clean install`.
 
 ---
+
+## 14. Énumérations à créer (`sigatt.commons.enums`)
+
+Enums **nus** (clés seules, sans libellés — convention du projet ; le front affiche les valeurs
+brutes). Le comportement par catégorie vit dans les **stratégies**, jamais dans l'enum.
+
+| Enum | Valeurs | Rôle |
+|---|---|---|
+| `CategorieImmatriculation` | `ETAT, COLLECTIVITE, PARAPUBLIC, POLICE, TRANSPORT_PUBLIC, PRIVE, CD_SERVICE, CD_PERSONNEL, CC_SERVICE, CC_PERSONNEL, IN_SERVICE, IN_PERSONNEL, CMD, PARTICULIER` | Résolue depuis `statutProprietaire.immatCode` (annexe B) ; sélectionne la stratégie |
+| `TypeSupportPlaque` | `VEHICULE, CYCLE` | Choix du compteur + inversion à l'affichage + nombre de plaques |
+| `MentionSerie` | `IT, AT` | Portée par `RegimeDouanier.mentionSerie` (nullable = série normale) |
+| `SourceImmatriculation` | `GENEREE, MIGREE, INTERNE` | Colonne `source` du registre (traçabilité de provenance) |
+| `EffetSurNumero` | `TIRAGE, RECOMPOSITION_REGION, CONSERVATION, CONDITIONNEL_STATUT_REGIME, TIRAGE_SERIE_PRIVEE, TIRAGE_SERIE_STATUT` | Configuré **par nature de demande** (cf. §15.4) ; aiguille le bloc 1 du pseudo-code |
+
+Champs `@Enumerated(EnumType.STRING)` sur les entités concernées. `SourceDemande` (existant)
+n'est pas modifié.
+
+## 15. Données dynamiques à configurer (rien en dur)
+
+### 15.1 Les compteurs (`serie_immatriculation`) — amorçage automatisé
+
+**Règle d'or : ne jamais saisir ces valeurs à la main.** Un job de calage les dérive du registre
+après import du legacy : `valeur_courante = MAX(numero_ordre) par clé + marge`. Indispensable
+notamment pour créer **une ligne par mission diplomatique × bande** (sans quoi le premier tirage
+`CD` repartirait de 0001 et épuiserait les 50 tentatives en sauts de collisions).
+
+Valeurs qu'aurait produites le calage sur les extractions d'avril 2024 (illustration — recalage
+obligatoire à la bascule) : `PRIVE|VEHICULE=(G3, 2088)`, `ETAT|VEHICULE=(A1, 4237)`,
+`COLLECT|VEHICULE=(B1, 357)`, `PARAPUB|VEHICULE=(C1, 1390)`, `POLICE|VEHICULE=(P1, 453)`,
+`TRANSPORT|VEHICULE=(T1, 8761)`, `CD|SERVICE|01=(CD, 44)`, `CD|PERSONNEL|01=(CD, 1022)`,
+`IN|SERVICE|27=(IN, 308)`… et `PRIVE|CYCLE` selon la décision DH1 (continuité stricte, front
+6615) vs **DJ1 recommandé** (groupe vierge).
+
+### 15.2 Les paramètres (`parametre`, modifiables à chaud par l'admin)
+
+| Clé | Défaut proposé | Rôle |
+|---|---|---|
+| `immatriculation.generation.active` | `false` | Interrupteur général (bascule sans redéploiement) |
+| `immatriculation.amorcage.marge` | `50` | Marge ajoutée au max observé (voitures et catégories) |
+| `immatriculation.amorcage.marge.cycle` | `500` | Marge motos si continuité stricte (risque stocks) |
+| `immatriculation.serie.cycle.depart` | `DJ1` | Groupe de départ du compteur moto (décision D4) |
+
+### 15.3 Les seeds référentiels
+
+1. `statut_proprietaire.immat_code` : **correction** → codes de `CategorieImmatriculation` (annexe B).
+2. `region` (referentiel-service) : les 13 codes `01→13` (annexe A).
+3. `regime_douanier` : nouvelle colonne **`mention_serie`** + seed des régimes (liste à fournir
+   par le métier — D3).
+4. `type_vehicule.nombre_plaque` : 2 automobiles / 1 motos-remorques (art. 4) + critère de
+   classement `CYCLE` (genre Motocycle).
+5. `pays_mandataire` / `organisation_internationale` : codes actuels conservés (validés contre
+   prod), à confronter à l'arrêté conjoint (D2).
+
+### 15.4 L'effet par nature de demande — configurable, pas codé en dur
+
+Nouvelle donnée : **`effet_numero`** (valeur de l'enum `EffetSurNumero`) associée à chaque
+**nature de demande** (colonne sur le référentiel `type_demande` du referentiel-service — même
+principe que `mention_serie` sur le régime douanier). Le tableau N1..N9 de la fiche métier
+(PMC=TIRAGE, changement d'adresse=RECOMPOSITION_REGION, duplicata/gage/transformation=CONSERVATION,
+changement de propriétaire/renouvellement=CONDITIONNEL_STATUT_REGIME,
+banalisation=TIRAGE_SERIE_PRIVEE, levée=TIRAGE_SERIE_STATUT) devient ainsi un **paramétrage
+administrable** : une nouvelle nature de demande future n'exige aucun redéploiement.
+
+## 16. Catalogue des scénarios de simulation
+
+La base des tests de la phase 1 et de la recette. Étiquettes : **[U]** test unitaire,
+**[I]** test d'intégration (MockMvc + base réelle, patron `DossierImmatriculationControllerTest`),
+**[R]** recette métier.
+
+**A. Nominaux par catégorie** (état initial = compteurs du §15.1)
+
+| # | Scénario (Étant donné / Quand / Alors) | Type |
+|---|---|---|
+| S01 | Privé, voiture, région 03, régime normal → `2089 G3 03` | I+R |
+| S02 | Privé, voiture, région 09, tirage suivant → `2090 G3 09` (compteur national) | I+R |
+| S03 | Privé, voiture, région 05, admission temporaire → `2091 G3 05 AT` | I+R |
+| S04 | État (EPE), franchise temporaire, région 03 → `4238 A1 03 IT` | I |
+| S05 | Collectivité, région 06 → `0358 B1 06` | I |
+| S06 | Parapublic, région 03 → `1391 C1 03` | I |
+| S07 | Police, région 03 → `0454 P1 03` | I |
+| S08 | Transporteur public, région 03 → `8762 T1 03` | I+R |
+| S09 | Mission diplomatique France (code 01), service → `0045 CD 01` | I+R |
+| S10 | Personnel diplomatique France → `1023 CD 01` (bande 1001+) | I+R |
+| S11 | Mission/personnel consulaire → `NNNN CC II` (bandes idem) | I |
+| S12 | Organisation internationale UEMOA (27), service → `0309 IN 27` | I+R |
+| S13 | Personnel organisation internationale → bande 1001+ | I |
+| S14 | Chef de mission Ghana (02), première demande → `02 CMD` | I+R |
+| S15 | Moto privée, région 10, premier tirage → `0001 1DJ 10` (groupe vierge) | I+R |
+| S16 | Moto d'une collectivité → `NNNN 1B RR` (compteur `COLLECT\|CYCLE`) | I |
+
+**B. Limites et avancement de séries**
+
+| # | Scénario | Type |
+|---|---|---|
+| S17 | `PRIVE\|VEHICULE` à (G3, 9999) → prochain tirage = `0001 G4 RR`, dans la même transaction verrouillée | I |
+| S18 | (G9, 9999) → `H1` (saut de `I` : lettre suivante de l'alphabet privé) | U |
+| S19 | (Z9, 9999) → `DD1` ; (DD9, 9999) → `DE1` (croisement, ordre observé du legacy moto) | U |
+| S20 | Transport (T9, 9999) → `T10` (chiffre à deux positions, art. 31) | U |
+| S21 | Bande diplomatique SERVICE pleine (0999) → erreur dédiée `bande.diplomatique.pleine` (escalade métier, pas de débordement sur 1001+) | U+I |
+| S22 | Seconde demande CMD pour la même mission → refus (contrainte `CMD\|02`) | I+R |
+
+**C. Validations et erreurs d'entrée**
+
+| # | Scénario | Type |
+|---|---|---|
+| S23 | Statut du propriétaire absent → `VALIDATION_FAILED`, clé i18n dédiée | I |
+| S24 | Région indéterminable (pas de résidence, pas de site) → erreur | I |
+| S25 | Catégorie CD sans pays mandataire → erreur « mission requise » | I |
+| S26 | Régime douanier sans `mention_serie` configurée → série normale (défaut sûr) | U |
+| S27 | Plaque saisie INTERNE au format invalide (`2089 I3 03` — lettre interdite) → rejet | I |
+| S28 | Plaque saisie INTERNE valide → contrôlée + inscrite au registre (source INTERNE) | I |
+
+**D. Anti-doublon et robustesse**
+
+| # | Scénario | Type |
+|---|---|---|
+| S29 | 10 tirages concurrents (5 threads) sur la même série → 10 numéros distincts consécutifs (copie de `testCreateConcurrentNominalCases`) | I |
+| S30 | Numéro suivant déjà présent au registre (délivré après l'extraction) → sauté, le suivant est attribué | I |
+| S31 | Rejeu du même dossier (bulk renvoyé après coupure) → LA MÊME plaque est retournée, compteur inchangé | I+R |
+| S32 | Échec du traitement APRÈS allocation (rollback) → ni plaque ni incrément persistés ; échec après commit → trou assumé | I |
+| S33 | 50 collisions consécutives (registre saturé artificiellement) → `CONFLICT` propre, pas de boucle infinie | I |
+
+**E. Cycle de vie par nature de demande** (aiguillage du bloc 1)
+
+| # | Scénario | Type |
+|---|---|---|
+| S34 | Changement d'adresse Bobo : `2089 G3 03` → `2089 G3 09`, aucun tirage, clé registre inchangée | I+R |
+| S35 | Changement de propriétaire, même statut/régime → numéro inchangé | I+R |
+| S36 | Changement de propriétaire, privé → transporteur → NOUVEAU tirage `T1`, l'ancien `(G3,2089)` reste consommé | I+R |
+| S37 | Renouvellement d'une plaque **pré-2017** (`11 AA5302`) → tirage au format actuel (art. 50) | I+R |
+| S38 | Duplicata perte/vol → numéro conservé, réédition | R |
+| S39 | Banalisation d'un véhicule d'État → tirage en série PRIVÉE | I+R |
+| S40 | Levée de banalisation → tirage dans la série du statut réel | I+R |
+| S41 | Transformation → numéro conservé (série non modifiable, US-CG-022) | R |
+
+**F. Migration et bascule**
+
+| # | Scénario | Type |
+|---|---|---|
+| S42 | Import du legacy rejoué deux fois → aucun doublon (idempotent, `ON CONFLICT DO NOTHING`) | I |
+| S43 | Job de calage → chaque compteur = max observé + marge ; lignes créées pour chaque mission × bande | I |
+| S44 | Plaque moto de STOCK legacy (trou d'un groupe ≤ DH) posée après la bascule → saisie INTERNE acceptée + registre ; le générateur (en `DJ`) ne peut jamais la percuter | I+R |
+
+## 17. Prérequis et points à clarifier
+
+### 17.1 Prérequis — ce qui MANQUE aujourd'hui (avec porteur)
+
+| # | Prérequis | Porteur | Bloque quoi |
+|---|---|---|---|
+| P1 | **Le workflow de statut du dossier n'existe pas dans le code** (aucun champ `statut`, aucun écran « valider ») — US-CG-008 le suppose : l'action « Valider » est le point d'appel du moteur et **reste à construire** | Équipe technique (dev en cours, sprint juillet) | Le branchement (phase 3) — PAS le moteur (phase 1) |
+| P2 | Fiche de validation métier signée (statuts→séries, régions, natures N1..N9, décisions D1..D6) | Métier DGTTM | L'activation |
+| P3 | Arrêté conjoint des codes missions/organisations (art. 44) | Métier DGTTM | La validation finale des plaques diplomatiques |
+| P4 | Liste des régimes douaniers + mention (aucune/IT/AT) — table vide | Métier DGTTM | Les mentions IT/AT |
+| P5 | Ré-extractions **CSV brutes** des deux parcs à la date de bascule (fichiers actuels : avril 2024, motos plafonnées Excel) | Métier / DSI legacy | Le calage des compteurs |
+| P6 | Seeds à créer/corriger : `immat_code` (coordination — référentiel déjà livré), 13 régions, `nombre_plaque`, `mention_serie`, `effet_numero` | Équipe technique | Le moteur (phase 2) |
+| P7 | Décision DH1 vs **DJ1** pour les motos (D4) | Métier DGTTM | L'amorçage moto |
+| P8 | Extension du retour bulk (`DossierSyncSuccess` + plaque) et écran desktop associé | Équipes backend + desktop | Le retour de la plaque aux guichets (non bloquant) |
+
+### 17.2 Ce que l'ÉQUIPE TECHNIQUE doit comprendre / clarifier
+
+1. **Le verrou pessimiste exige une transaction active** : `findAndLockByCleSerie` appelé hors
+   `@Transactional` échoue — le moteur est une façade transactionnelle, jamais un utilitaire statique.
+2. **Bulk = `REQUIRES_NEW` par dossier** (`SingleImportRunner`) : un échec d'attribution rejette
+   UN dossier sans annuler le lot ; l'idempotence par `dossierId` est ce qui rend le rejeu sûr.
+3. **Pas de méthode publique `final`** dans les services proxifiés (CGLIB) ; Javadoc pour le
+   checkstyle « design for extension ».
+4. **Toute modification des DTO/enums impose de réinstaller `lib-commons`** (`-am`).
+5. La **contrainte unique sur `vehicule.immatriculation`** doit être posée après vérification des
+   données déjà saisies (le champ est libre aujourd'hui — doublons possibles à purger avant).
+6. Le **numéro de dossier** (desktop, site+machine+jour) et la **plaque** sont deux espaces
+   distincts — ne jamais réutiliser `DossierImmatriculationNumberHelper` pour la plaque (le patron
+   est copié, pas partagé).
+7. Les finders custom du registre doivent filtrer `deleted = false` (règle soft-delete du projet) —
+   mais les lignes du registre ne sont **jamais** soft-deletées (l'unicité doit survivre à tout).
+8. Clarifier avec l'architecte : l'API de validation (P1) vivra-t-elle dans
+   `immatriculation-service` (recommandé : le moteur est local, transaction unique) ?
+
+### 17.3 Ce que le MÉTIER doit comprendre / clarifier
+
+1. **Comprendre** : le compteur est national — il ne faut jamais demander de « réserver des
+   numéros » pour un site ou une région ; la région sur la plaque est une étiquette.
+2. **Comprendre** : un numéro n'est jamais recyclé — les trous sont normaux et définitifs
+   (l'historique en est plein).
+3. **Clarifier — série catégorielle pleine** : le décret est muet sur l'après-`A9` (État), `B9`,
+   `C9`, `P9`, `T99` : nouvelle lettre ? croisement ? (Sans urgence : A1 est à 4237 sur 9999,
+   mais la règle doit être écrite.)
+4. **Clarifier — bande diplomatique pleine** : que faire si une mission dépasse 999 véhicules de
+   service ou 8999 personnels ? (Escalade proposée : blocage + arbitrage DGTTM/MAE.)
+5. **Clarifier — source du code région** : résidence déclarée du propriétaire (recommandé) ou
+   région du site d'enrôlement ? Impact direct sur la plaque.
+6. **Clarifier — banalisation** : confirmer que la plaque banalisée est bien tirée en **série
+   privée** (l'US-CG-020 ne le dit pas explicitement ; c'est le sens de la banalisation).
+7. **Clarifier — renouvellement papier→polycarbonate** : confirmer que toute plaque pré-2017
+   rencontrée est ré-immatriculée au format actuel (art. 50) au fil de l'eau.
+8. **Fournir** : D1 (régions post-2022), D2 (arrêté missions), D3 (régimes douaniers), D4
+   (DH1/DJ1), D5 (ré-extractions) — cf. fiche de validation.
 
 ## Annexe A — Codes des 13 régions (validés empiriquement à 99 %, cf. §2.5)
 
