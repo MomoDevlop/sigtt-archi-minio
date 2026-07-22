@@ -9,7 +9,11 @@
 > - Décret n°2017-0114/PRES/PM du 17 mars 2017 (modalités d'immatriculation, 52 articles) ;
 > - Arrêté conjoint n°2017-0101/MTMUSR/M-SECU du 21 juillet 2017 (normes des plaques, 24 articles) ;
 > - Arrêté nomenclature genres/carrosseries/sources d'énergie ; Décret n°2017-0994 (carte grise) ;
-> - `prod.txt` : extraction massive du système existant (352 922 lignes) — analysée statistiquement ;
+> - `prod.txt` : extraction massive du système existant, **voitures** (352 922 lignes) ;
+> - `prod-moto.txt` : extraction du parc **motos** (1 048 575 lignes) — analysées statistiquement ;
+> - `Cartes-grises-25-03-2024.xlsx` (11 colonnes) et `Moto.xlsx` (**58 colonnes** : statut du
+>   propriétaire, région de résidence, dates, motifs, carte précédente…) — extractions détaillées de
+>   mars-avril 2024, utilisées pour les **validations croisées** du §2.5 ;
 > - Le code existant : `sigatt-backend` (socle CRUD, dossier d'immatriculation SIGATT-233),
 >   `sigatt-desktop` (saisie hors-ligne + synchronisation bulk), référentiels et seeds SQL.
 
@@ -87,8 +91,90 @@ L'analyse statistique de `prod.txt` lève les ambiguïtés que les textes laisse
    idem `pays_mandataire` pour CD/CC.
 7. Les doublons du fichier (42 705 lignes strictement identiques) sont des rééditions de carte grise,
    **toujours à région identique** — aucune contradiction avec les règles ci-dessus.
-8. Les cycles (`1D`, `4E`…, chiffre avant lettre) sont quasi absents (4 lignes) : le parc moto n'est
-   pas dans cette extraction — point à clarifier avec la DGTTM (cf. §12).
+8. Les cycles (`1D`, `4E`…, chiffre avant lettre) sont quasi absents (4 lignes) : le parc moto fait
+   l'objet d'une extraction séparée, analysée ci-dessous.
+
+### 2.4 Le cas des MOTOS — analyse de `prod-moto.txt` (1 048 575 lignes)
+
+Le parc moto est **trois fois plus volumineux** que le parc automobile et suit une logique
+d'attribution legacy **différente**. Constats vérifiés :
+
+1. **Format inversé confirmé** (décret art. 27) : `NNNN <chiffre><lettres> RR` — ex. `0042 5M 03`.
+   Mêmes 13 régions (mais distribution bien moins centralisée : Centre 38 % contre 79 % pour les
+   voitures — la moto est le véhicule de tout le pays), mêmes mentions (`IT` : 1 899, `AT` : 6),
+   mêmes séries catégorielles embryonnaires (`1A` État : 4 584, `1B` Collectivités : 2 238,
+   `1C` : 235, `1P` Police : 271, `1T` : 93).
+2. **Même clé d'unicité** : national par groupe, zéro numéro multi-région (testé sur `1D` et `5M`).
+3. **Le croisement à deux lettres est DÉJÀ actif** : l'alphabet simple est épuisé et la prod contient
+   `DD`, `DE`, `DF`, `DG`, `DH` — **la première lettre reste `D`, la seconde avance dans l'alphabet
+   privé**. Cette observation tranche empiriquement la mécanique du « croisement deux à deux » de
+   l'art. 27 : `…9Z → DD → DE → DF → DG → DH → (DJ)…`. Front actuel observé : `1DH` (max 6615).
+4. **️ L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
+   (`L…Z` × chiffres 1-9 et `DD…DG` × 1-9) sont remplis **en parallèle**, chacun à ~33 % de densité,
+   avec des numéros **éparpillés sur tout l'espace 0001-9999** (ex. `5M` présent : 0001, 0007, 0009,
+   0010, 0014… max 9999). Ce motif est la signature de **stocks de plaques pré-imprimées** écoulés
+   par lots (guichets/concessionnaires) : la date d'immatriculation et le numéro sont décorrélés.
+   Seuls les groupes anciens (`D…J`, tous chiffres) sont complets.
+5. **Conséquence capitale pour l'amorçage** : pour les motos, un « trou » n'est **pas un numéro
+   libre** — c'est potentiellement une plaque déjà fabriquée, en stock, qui sera posée demain.
+   Il est donc interdit d'amorcer un compteur au milieu des groupes legacy. **Le compteur moto de
+   SIGATT démarrera sur un groupe VIERGE, au-delà de tout ce qui est observé** (après `DH` →
+   **`DJ`**, `I` étant exclu), et tous les groupes antérieurs (`D` simple → `DH`) sont considérés
+   comme **intégralement consommés** (importés/bloqués au registre).
+6. **Le fichier est coupé à la limite Excel** (1 048 575 = 2²⁰−1) — la coupe tombe en fin de tri
+   (dernière ligne `9999 9X 09`, perte de quelques lignes `9Y`/`9Z` au plus) mais impose une
+   **ré-extraction sans Excel** (CSV direct) avant la bascule (cf. §10).
+
+### 2.5 Validations croisées par les extractions détaillées (Excel, mars-avril 2024)
+
+Deux extractions riches (`Cartes-grises-25-03-2024.xlsx`, 11 colonnes ; `Moto.xlsx`, **58 colonnes** :
+statut du propriétaire, région de résidence, dates de demande/inscription, motif, carte précédente…)
+ont permis de **prouver empiriquement** ce qui n'était jusqu'ici que déduit :
+
+1. **Mapping des codes région VALIDÉ à 99 %** : le croisement « suffixe de plaque × libellé de la
+   région de résidence » sur 1 048 575 motos donne, pour chacun des 13 codes, une région dominante
+   à 99 % — exactement la table de l'annexe A (01=Boucle du Mouhoun … 03=Centre … 13=Sud-Ouest).
+   La décision #1 passe de « proposition » à « fait mesuré » (la confirmation officielle reste une
+   formalité).
+2. **Correspondance statut → série VALIDÉE** : `EPE`→A (86 %), `COLLECT`→B (98 %), `PARAPUB`→C (90 %),
+   `POLICE`→P (91 %), `PUB`→T (94 %), `DIPL_*`→CD (100 %), `INT_MISS`→IN (85 %), `STD`→lettres privées.
+   Le legacy applique bien le décret ; le bruit résiduel (1-15 %) = erreurs de saisie historiques.
+3. **Hypothèse des stocks pré-imprimés moto PROUVÉE** : la corrélation entre numéro d'ordre et date
+   de demande est **quasi nulle (r ≈ +0,02 à +0,08)** dans tous les groupes témoins — les numéros
+   bas et hauts d'un même groupe sont posés sur la même période 2019→2024, y compris dans les groupes
+   « pleins » comme `1D`. Un groupe moto n'a JAMAIS été rempli séquentiellement : le démarrage sur
+   série vierge (`DJ`) est la seule option sûre.
+4. **Fraîcheur des données** : demandes jusqu'au **05/04/2024** (motos) et extraction voitures datée
+   du 25/03/2024 → les fronts observés (`G3`@2088, `1DH`@6615) datent d'avril 2024 ; la ré-extraction
+   à la bascule (§10.3) est indispensable. `Moto.xlsx` est lui aussi plafonné à 1 048 576 lignes
+   (limite Excel, feuille de débordement vide).
+5. **Vie du parc** (motos) : 96,8 % de premières immatriculations (`newIssuance`/`newVehicle`),
+   34 352 changements de propriétaire (numéro conservé), 16 814 duplicata perte + 16 158
+   renouvellements (même numéro), 28 281 reprises de l'ancien système (`lossLegacy`), 1 855
+   transformations. **25 053 cartes précédentes au format pré-2017** (`11 AA5302`) et ~22 000 en
+   variante espacée (`NN AA NNNN`) : la transition de l'art. 50 est visible — le champ
+   `immatriculationPrecedente` du dossier devra accepter aussi ces anciens formats (validation
+   assouplie, cf. §11).
+
+### 2.6 Voitures vs motos — les différences en un tableau
+
+| | **Voitures** (`prod.txt`, 353 k) | **Motos** (`prod-moto.txt`, 1,05 M) |
+|---|---|---|
+| Format du groupe | Lettre puis chiffre : `2089 G3 03` | Chiffre puis lettre(s) : `0042 5M 03`, `1234 1DD 09` |
+| Compteur SIGATT | `PRIVE\|VEHICULE` (et compteurs catégoriels `A/B/C/P/T`) | `PRIVE\|CYCLE` — **espace totalement disjoint** des voitures |
+| État du legacy | Remplissage **séquentiel propre** : `D1→…→G2` pleines, front dense `G3` @ 2088 | Remplissage **éparpillé multi-groupes** (stocks pré-imprimés) : `D…J` pleins, `K…Z` + `DD…DG` à ~33 % partout, front `1DH` @ 6615 |
+| Amorçage SIGATT | **Continuité** : reprise à `G3`, 2088 + marge (les trous derrière le front restent interdits) | **Rupture propre** : démarrage sur groupe **vierge `DJ`** (`0001 1DJ RR`) ; tout ce qui précède = consommé |
+| Croisement 2 lettres | Pas encore atteint (~1,26 M de numéros de marge) | **Déjà actif** — ordre observé : 2ᵉ lettre avance (`DD→DE→…`), réutilisé tel quel pour les voitures le moment venu |
+| Avancement dans un groupe | `G3: 9999 → G4: 0001` (2ᵉ caractère = chiffre, puis lettre suivante) | Identique sur la forme normalisée ; seul l'**affichage** est inversé |
+| Mentions douanières | `IT` 3 053 / `AT` 1 485 | `IT` 1 899 / `AT` 6 |
+| Régions | Centre 79 %, Hauts-Bassins 11 % | Centre 38 % — parc réparti sur tout le territoire |
+| Nombre de plaques produites | 2 (avant + arrière, art. 4) | 1 |
+
+**Point d'architecture** : ces différences ne créent PAS deux algorithmes. La normalisation interne
+est commune (`groupe='DJ1'`, `numeroOrdre`, `codeSuffixe`, `typeSupport`) ; le `TypeSupportPlaque`
+(`VEHICULE`/`CYCLE`) pilote (a) le choix du compteur (`PRIVE|VEHICULE` vs `PRIVE|CYCLE`),
+(b) le **formatage à l'affichage** (`G3` vs `3G`, `DD1` vs `1DD`) et (c) le nombre de plaques.
+Même moteur, mêmes cinq couches anti-doublon, deux lignes de compteur.
 
 ---
 
@@ -171,7 +257,7 @@ CREATE TABLE serie_immatriculation (
 
 | Famille | Clé | Exemples de lignes |
 |---|---|---|
-| Privés | `PRIVE\|VEHICULE` et `PRIVE\|CYCLE` | `(PRIVE\|VEHICULE, G3, 2088)` |
+| Privés | `PRIVE\|VEHICULE` et `PRIVE\|CYCLE` | `(PRIVE\|VEHICULE, G3, 2088)` · `(PRIVE\|CYCLE, DJ1, 0)` — groupe vierge, cf. §2.4 |
 | Lettre fixe (État, Collectivités, Parapublics, Police) | `<CAT>\|<SUPPORT>` | `(ETAT\|VEHICULE, A1, 4237)` |
 | Transporteurs publics | `TRANSPORT\|<SUPPORT>` | `(TRANSPORT\|VEHICULE, T1, 8761)` |
 | Diplomatiques (compteur **par mission et par bande**) | `<SIGLE>\|<BANDE>\|<code mission>` | `(CD\|SERVICE\|01, CD, 45)`, `(IN\|PERSONNEL\|27, IN, 1023)` |
@@ -347,9 +433,10 @@ Le verrou sur la ligne de compteur ne dure que le temps du traitement d'un dossi
 - Alphabet privé ordonné (18 lettres) : `D E F G H J K L M N Q R S U V X Y Z`
   (exclusions réglementaires : `A B C P T W` réservées, `I O` interdites — art. 27).
 - Avancement : `G3` + ordre 9999 → `G4` ordre 0001 → … → `G9` → `H1` → … → `Z9` →
-  croisement deux à deux `DD1` … `ZZ9` (mécanique isolée dans l'utilitaire ; l'ordre exact du
-  croisement est une décision DGTTM, cf. §12 — sans urgence : ~1,3 million de numéros restent
-  avant `Z9` au rythme actuel).
+  croisement deux à deux. **Ordre du croisement observé dans le legacy moto** (§2.4) : première
+  lettre fixe, seconde lettre parcourant l'alphabet privé — `DD → DE → DF → DG → DH → DJ → … → DZ`,
+  puis `ED → EE → …` (chaque paire × chiffres 1-9). Mécanique isolée dans l'utilitaire ;
+  côté voitures, ~1,3 million de numéros restent avant `Z9`.
 - Lettres fixes (A/B/C/P) : seule la partie chiffre avance (`A1→A2…A9` ; au-delà : décision DGTTM).
 - Transport : chiffre `1→99` (`T1…T99`, art. 31).
 - Cycles : mêmes règles, groupe **inversé à l'affichage** (`3G`) mais stocké normalisé
@@ -504,7 +591,9 @@ sequenceDiagram
 
 ## 9. Exemples concrets — ce que produira l'algorithme
 
-État d'amorçage supposé (repris de l'extraction prod) : `PRIVE|VEHICULE=(G3, 2088)`,
+État d'amorçage supposé (repris des extractions prod, **arrêtées à avril 2024** — les valeurs
+réelles seront recalées à la ré-extraction de bascule, cf. §10) : `PRIVE|VEHICULE=(G3, 2088)`,
+`PRIVE|CYCLE=(DJ1, 0)` — groupe vierge après le front legacy `1DH`, cf. §2.4 —,
 `TRANSPORT|VEHICULE=(T1, 8761)`, `ETAT|VEHICULE=(A1, 4237)`, `CD|SERVICE|01=(CD, 44)`,
 `CD|PERSONNEL|01=(CD, 1022)`, `IN|SERVICE|27=(IN, 308)`.
 
@@ -519,7 +608,8 @@ sequenceDiagram
 | 7 | **Diplomate** de cette même ambassade (véhicule personnel) | `CD_PERSONNEL` | `CD\|PERSONNEL\|01` : 1022→1023 | **`1023 CD 01`** — bande personnel : 1001-9999 |
 | 8 | **UEMOA** (organisation code 27), véhicule de service | `IN_SERVICE` | `IN\|SERVICE\|27` : 308→309 | **`0309 IN 27`** |
 | 9 | **Chef de mission diplomatique** du Ghana (code 02) | `CMD` | aucun compteur | **`02 CMD`** — un seul véhicule par mission ; un second tirage pour la mission 02 est REFUSÉ (contrainte `CMD\|02`) |
-| 10 | **Moto** d'un particulier à Ouahigouya (région 10) | `PRIVE` (cycle) | `PRIVE\|CYCLE` (compteur distinct, amorçage à valider) | **`0001 1D 10`** — chiffre avant la lettre |
+| 10 | **Moto** d'un particulier à Ouahigouya (région 10) | `PRIVE` (cycle) | `PRIVE\|CYCLE` : groupe vierge `DJ1`, 0→1 | **`0001 1DJ 10`** — chiffre avant les lettres ; démarrage sur groupe vierge car les trous des groupes legacy peuvent correspondre à des plaques pré-imprimées en stock (§2.4) |
+| 10b | Moto suivante, à Ouagadougou | `PRIVE` (cycle) | même compteur : 1→2 | **`0002 1DJ 03`** — compteur national moto, distinct du compteur voitures |
 | 11 | La série privée atteint **9999** (`G3` pleine) | `PRIVE` | avancement dans la même transaction | `9999 G3 xx` puis **`0001 G4 xx`** |
 | 12 | Le véhicule de l'exemple 1 **déménage à Bobo** | mutation (art. 3) | aucun tirage | `2089 G3 03` → **`2089 G3 09`** (recomposition ; `(G3, 2089)` reste consommé) |
 | 13 | Le véhicule de l'exemple 1 est **racheté par un taxi** (changement de statut) | ré-immatriculation | `TRANSPORT\|VEHICULE` : 8762→8763 | **`8763 T1 03`** — nouveau tirage complet ; l'ancienne plaque n'est JAMAIS recyclée |
@@ -529,18 +619,28 @@ sequenceDiagram
 
 ## 10. Amorçage et migration du legacy
 
-1. **Import du registre** : job d'import de `prod.txt` (353 k lignes) → `immatriculation_delivree`
-   avec `source = MIGREE`. Normalisation à l'import : dédoublonnage (42 705 rééditions), correction
-   des 4 inversions de saisie connues (`1D`→ cycle assumé ou correction, à arbitrer), parsing des
-   mentions IT/AT et du format court CMD. Import **idempotent** (`ON CONFLICT (cle_unicite) DO NOTHING`),
-   exécutable en plusieurs fois.
-2. **Amorçage des compteurs** : pour chaque compteur, `valeur_courante = max observé` + **marge de
-   sécurité paramétrable** (clé `immatriculation.amorcage.marge` dans la table `parametre`, défaut
-   proposé : 50) — l'extraction a une date, des numéros ont pu être délivrés depuis. La couche 3
-   (registre) rattrape de toute façon tout numéro manqué.
-3. **Rapprochement final** : avant l'activation en production, ré-extraire le legacy à date et rejouer
-   l'import (idempotent) + recaler les compteurs. L'activation elle-même est gardée par un paramètre
-   (`immatriculation.generation.active`), désactivable sans redéploiement.
+1. **Import du registre** : job d'import de `prod.txt` (353 k lignes, voitures) **et `prod-moto.txt`
+   (1,05 M lignes, motos)** → `immatriculation_delivree` avec `source = MIGREE`. Normalisation à
+   l'import : dédoublonnage (42 705 rééditions voitures, 23 938 motos), classement automobile/cycle
+   par l'ordre chiffre/lettre du groupe, parsing des mentions IT/AT et du format court CMD.
+   Import **idempotent** (`ON CONFLICT (cle_unicite) DO NOTHING`), exécutable en plusieurs fois.
+2. **Amorçage des compteurs — deux régimes distincts (cf. §2.6)** :
+   - **Voitures** (legacy séquentiel propre) : `valeur_courante = max observé` + **marge de sécurité
+     paramétrable** (clé `immatriculation.amorcage.marge` dans la table `parametre`, défaut proposé :
+     50) — l'extraction a une date, des numéros ont pu être délivrés depuis.
+   - **Motos** (legacy éparpillé, stocks pré-imprimés) : **démarrage sur un groupe VIERGE**
+     (`PRIVE|CYCLE = (DJ1, 0)`), au-delà de tout groupe observé. Les trous des groupes legacy
+     (`D` → `DH`) ne sont **jamais** visités par le générateur (le compteur ne passe pas par eux) :
+     inutile de les bloquer par des lignes synthétiques. Une plaque de stock legacy posée après la
+     bascule entre au registre par la voie **saisie validée** (source `INTERNE`), comme toute plaque
+     existante.
+   La couche 3 (registre) rattrape de toute façon tout numéro manqué.
+3. **Ré-extractions propres obligatoires** : `prod-moto.txt` est tronqué à la limite Excel
+   (1 048 575 = 2²⁰−1) — exiger des ré-extractions **CSV directes** (sans passage par Excel) des deux
+   parcs, à date de bascule, et rejouer l'import (idempotent) + recaler les compteurs voitures et le
+   groupe de départ motos si le legacy a dépassé `DH` entre-temps.
+4. **Activation gardée** par un paramètre (`immatriculation.generation.active`), désactivable sans
+   redéploiement.
 
 ---
 
@@ -561,18 +661,25 @@ Expressions régulières par famille (dérivées des art. 9-36 ; `RR` = `0[1-9]|
 En cas de non-conformité : `SigattErrorResponse(VALIDATION_FAILED)` avec clé i18n
 `immatriculation.format.invalide` (+ variantes par famille), selon le modèle d'erreurs du socle.
 
+**Cas particulier — `immatriculationPrecedente` (et `numeroCartePrecedente`)** : les extractions
+détaillées montrent ~25 000 plaques **au format pré-2017** (`11 AA5302`, variante `NN AA NNNN`)
+encore référencées comme immatriculation précédente (transition de l'art. 50). La validation de ces
+champs doit donc accepter **l'union** { format 2017, format pré-2017 } — mais seul le format 2017
+entre au registre avec une `cle_unicite` (l'ancien format est hors espace de génération, aucun
+risque de collision).
+
 ---
 
 ## 12. Décisions à faire valider avant implémentation
 
 | # | Question | Proposition par défaut |
 |---|---|---|
-| 1 | **Codes région 01-13** : la liste n'est dans aucun des textes fournis (mapping alphabétique déduit et corroboré par la prod : 03=Centre, 09=Hauts-Bassins). Position sur les régions créées après 2022 ? | Seed des 13 codes historiques (annexe A), à confirmer par la DGTTM |
+| 1 | **Codes région 01-13** : ~~déduits~~ → **validés empiriquement à 99 %** (croisement suffixe × région de résidence sur 1 M de motos, cf. §2.5). Position sur les régions créées après 2022 ? | Seed des 13 codes (annexe A) ; confirmation officielle = formalité |
 | 2 | **Arrêté conjoint des codes mission** (art. 44) pour CD/CC/CMD/IN : à obtenir pour figer les référentiels `pays_mandataire` / `organisation_internationale` (prod observée jusqu'au code 64) | Conserver les codes seedés actuels (validés contre prod) |
 | 3 | **Moment de l'attribution** : le dossier n'a pas encore de workflow (`statut`). Attribuer à la création consommerait des numéros pour des demandes avortées | Attribution à l'étape de **validation** du dossier (quand le workflow existera) ; en attendant, moteur exposé comme service interne + point d'appel unique |
 | 4 | **Source du code région** : résidence du propriétaire (localité→région) ou site d'enrôlement ? | Résidence déclarée du propriétaire ; repli sur la région du site |
-| 5 | **Ordre exact du croisement deux lettres** après `Z9` (art. 27 : « croisement deux à deux », exemple `DE2`) | Isolé dans `AlphabetSeriePrivee` ; sans urgence (~1,3 M de numéros de marge) |
-| 6 | **Cycles/motos** : 4 lignes seulement dans prod — le parc moto est-il hors extraction ? Amorçage du compteur `PRIVE\|CYCLE` ? | Demander une extraction motos à la DGTTM avant activation des cycles |
+| 5 | **Ordre du croisement deux lettres** : ~~inconnu~~ → **résolu empiriquement** par `prod-moto.txt` (première lettre fixe, seconde avançant dans l'alphabet privé : `DD→DE→DF→DG→DH→DJ…`) | Confirmation DGTTM de la poursuite (`DJ…DZ` puis `ED…`) — la mécanique est isolée dans `AlphabetSeriePrivee` |
+| 6 | **Motos** : hypothèse des **stocks pré-imprimés PROUVÉE** (corrélation numéro↔date ≈ 0, cf. §2.5) — reste à valider le **groupe de démarrage vierge `DJ`** ; obtenir une ré-extraction **CSV sans Excel** (les deux fichiers moto sont plafonnés à 2²⁰ lignes) ; définir la transition (les stocks legacy continueront d'être posés après la bascule → enregistrement au registre par saisie INTERNE) | Cf. §2.4, §2.5 et §10 |
 | 7 | **Périmètre W/WW et immatriculations particulières** (`GOUVERNEUR 01`) | Hors phase 1 ; le pattern Strategy les accueillera sans refonte |
 | 8 | **Retour de la plaque au desktop** : étendre `DossierSyncSuccess {id, numero}` d'un champ `immatriculation` + colonne d'affichage côté desktop | À planifier avec l'équipe desktop (rétrocompatible) |
 | 9 | **Correction du seed `immat_code`** (annexe B) : impacte un référentiel déjà en dev | À coordonner (données existantes éventuelles) |
@@ -619,7 +726,7 @@ En cas de non-conformité : `SigattErrorResponse(VALIDATION_FAILED)` avec clé i
 
 ---
 
-## Annexe A — Codes des 13 régions (à faire confirmer, cf. décision #1)
+## Annexe A — Codes des 13 régions (validés empiriquement à 99 %, cf. §2.5)
 
 | Code | Région | Chef-lieu | | Code | Région | Chef-lieu |
 |---|---|---|---|---|---|---|
@@ -631,8 +738,9 @@ En cas de non-conformité : `SigattErrorResponse(VALIDATION_FAILED)` avec clé i
 | 06 | Centre-Ouest | Koudougou | | 13 | Sud-Ouest | Gaoua |
 | 07 | Centre-Sud | Manga | | | | |
 
-(Liste absente des textes fournis ; ordre alphabétique standard, corroboré par la prod : 03 ≈ 79 %
-des immatriculations = Centre/Ouagadougou, 09 ≈ 11 % = Hauts-Bassins/Bobo-Dioulasso.)
+(Liste absente des textes fournis, mais **validée par les données** : le croisement « suffixe de
+plaque × région de résidence du propriétaire » sur 1 048 575 motos donne cette table à 99 % pour
+chacun des 13 codes — cf. §2.5.)
 
 ## Annexe B — Correction du seed `statut_proprietaire.immat_code`
 
@@ -666,3 +774,8 @@ Lettres autorisées, dans l'ordre : `D E F G H J K L M N Q R S U V X Y Z` (18 le
 Exclusions : `A B C P T` (réservées), `W` (provisoires), `I O` (confusion avec 1 et 0).
 Capacité d'un groupe : 9 999 numéros ; d'une lettre : 89 991 ; de l'alphabet simple restant
 (depuis `G3`) : ≈ 1,26 million de numéros avant le croisement deux lettres.
+
+**Croisement deux lettres** (observé dans le legacy moto, §2.4) : première lettre fixe, seconde
+parcourant l'alphabet privé — `DD, DE, DF, DG, DH, DJ, … DZ`, puis `ED, EE, …` — chaque paire
+déclinée sur les chiffres 1-9. Capacité du croisement : 18 × 18 × 9 × 9 999 ≈ 29 millions de numéros
+par type de support. Affichage : `DD1` (automobile) / `1DD` (cycle) ; stockage normalisé `DD1`.
