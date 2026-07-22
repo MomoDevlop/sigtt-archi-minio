@@ -7,9 +7,10 @@
 > **Sur quoi s'appuie ce document** :
 > - le **décret n°2017-0114** du 17 mars 2017 (modalités d'immatriculation, 52 articles) ;
 > - l'**arrêté conjoint n°2017-0101** du 21 juillet 2017 (normes des plaques) ;
-> - l'analyse de **1,4 million de numéros réels** du système actuel : 352 922 voitures (`prod.txt`)
->   et 1 048 575 motos (`prod-moto.txt`) — chaque règle énoncée ici a été **vérifiée contre ces
->   données réelles**, pas seulement lue dans les textes.
+> - l'analyse de **1,4 million de numéros réels** du système actuel (extractions de mars-avril
+>   2024) : 352 922 voitures et 1 048 575 motos, y compris les **extractions détaillées** portant
+>   statut du propriétaire, région de résidence, dates et motifs de demande — chaque règle énoncée
+>   ici a été **vérifiée contre ces données réelles**, pas seulement lue dans les textes.
 >
 > La version technique (architecture, base de données, diagrammes) est dans
 > `strategie-generation-numero-immatriculation.md`.
@@ -164,9 +165,9 @@ dans SIGATT). Voici ce que chacun apporte, et son état de préparation :
 
 | Référentiel | Rôle dans la génération | État actuel |
 |---|---|---|
-| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** |  Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
+| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** | ⚠️ Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
 | **Type / genre du véhicule** (véhicule automobile, remorque, semi-remorque, motocycle, tricycle, quadricycle) | Distingue **voiture / moto** (ordre des caractères, choix du compteur) et fixe le **nombre de plaques** à produire : 2 pour une voiture, 1 pour une moto ou remorque | Présent ; le nombre de plaques n'est pas encore renseigné — à compléter |
-| **Régions** (13 régions, codes 01 à 13) | Les **2 chiffres de fin** pour les séries ordinaires, d'après la résidence du propriétaire |  La table existe mais est **vide** — à alimenter (liste proposée en fin de document) |
+| **Régions** (13 régions, codes 01 à 13) | Les **2 chiffres de fin** pour les séries ordinaires, d'après la résidence du propriétaire |  La table existe mais est **vide** — à alimenter. La correspondance code↔région a été **vérifiée à 99 %** en croisant, sur un million de motos, le code de la plaque et la région de résidence déclarée (liste en fin de document) |
 | **Pays mandataires** (~61 pays, chacun avec un code : France=01, Ghana=02, …) | Le **code de mission** pour les plaques `CD`, `CC` et `CMD` | Présent et **validé contre les données réelles** |
 | **Organisations internationales** (~65 organisations : PNUD=01, UEMOA=27, HCR=35, …) | Le **code d'organisation** pour les plaques `IN` | Présent et **validé contre les données réelles** (ex. les 308 véhicules `IN 27` du système actuel = l'UEMOA, dont le siège est à Ouagadougou) |
 | **Régimes douaniers** (mise à la consommation, franchise temporaire, admission temporaire…) | La **mention** de fin de plaque : rien, `IT` ou `AT` |  La table existe mais est vide — à alimenter avec la correspondance régime → mention |
@@ -220,15 +221,19 @@ même façon — et cela change la manière de démarrer SIGATT :
 
 **Les voitures : une file bien tenue.** Les séries ont été remplies dans l'ordre, complètement,
 l'une après l'autre (`D1` pleine, puis `D2`… jusqu'à `G2` pleine). La série en cours est `G3`,
-arrêtée au numéro **2088** dans l'extraction fournie.
+arrêtée au numéro **2088** dans l'extraction fournie (avril 2024 — le point exact sera relevé à
+la bascule).
 → **SIGATT continue simplement la file** : le prochain numéro voiture sera `2089 G3 …`
 (avec une marge de sécurité, car des numéros ont pu être délivrés depuis l'extraction).
 
 **Les motos : des plaques fabriquées d'avance.** Côté motos, les numéros ne se suivent pas :
 environ 135 séries sont remplies « en gruyère », à un tiers chacune, avec des numéros éparpillés
 partout. C'est la signature d'un circuit de **plaques pré-fabriquées par lots** puis écoulées au
-fil de l'eau par les guichets et les concessionnaires. Conséquence redoutable : **un numéro moto
-absent des données n'est pas un numéro libre** — la plaque physique existe peut-être déjà,
+fil de l'eau par les guichets et les concessionnaires. Ce n'est plus une hypothèse : l'analyse des
+**dates de demande** (fournies dans l'extraction détaillée) montre qu'à l'intérieur d'une même
+série moto, les numéros bas et les numéros hauts ont été posés **sur la même période 2019-2024**,
+dans le désordre complet — jamais dans l'ordre du compteur. Conséquence redoutable : **un numéro
+moto absent des données n'est pas un numéro libre** — la plaque physique existe peut-être déjà,
 en stock, et sera posée sur une moto le mois prochain.
 → **SIGATT ne reprend PAS la file des motos là où elle semble s'arrêter.** Le compteur moto démarre
 sur une **série neuve, jamais touchée par l'ancien système** : la série `DJ`. La toute première
@@ -346,14 +351,14 @@ neuve. Les « trous » de l'historique ne sont **jamais comblés**.
 
 | # | Décision | Pourquoi c'est nécessaire |
 |---|---|---|
-| 1 | Confirmer la **liste officielle des 13 codes région** (proposition ci-dessous, déduite des textes de décentralisation et confirmée par les données : 03 = Centre concentre 79 % des voitures) | La table des régions est vide ; le code figure sur chaque plaque ordinaire |
+| 1 | Confirmer la **liste officielle des 13 codes région** (table ci-dessous, désormais **vérifiée à 99 %** contre un million d'immatriculations réelles) | La table des régions est vide dans SIGATT ; le code figure sur chaque plaque ordinaire |
 | 2 | Fournir l'**arrêté conjoint des codes de missions et organisations** (Transports + Affaires étrangères) | Base légale des fins de plaque `CD`/`CC`/`IN`/`CMD` ; les codes observés vont jusqu'à 64 |
 | 3 | Valider la **correction des codes de série** du référentiel Statut du propriétaire | Les valeurs actuellement enregistrées ne correspondent pas au décret (ex. Police enregistrée « D » alors que le décret dit « P ») |
-| 4 | Confirmer le **démarrage des motos sur la série neuve `DJ`** et l'hypothèse des stocks de plaques pré-fabriquées | Évite tout conflit avec les plaques en stock ; c'est la conclusion de l'analyse du million de numéros motos |
-| 5 | Fournir des **ré-extractions complètes et récentes** des deux parcs (format brut, sans passage par Excel) à la date de bascule | Le fichier motos actuel est tronqué à la limite d'Excel ; les compteurs doivent être calés sur l'état réel du jour J |
+| 4 | Confirmer le **démarrage des motos sur la série neuve `DJ`** (l'existence des stocks de plaques pré-fabriquées n'est plus une hypothèse : elle est **prouvée** par l'analyse des dates — les numéros d'une même série sont posés dans le désordre sur 2019-2024) | Évite tout conflit avec les plaques en stock |
+| 5 | Fournir des **ré-extractions complètes et récentes** des deux parcs (format brut, sans passage par Excel) à la date de bascule | Les extractions actuelles datent de **mars-avril 2024** et les fichiers motos sont tronqués à la limite d'Excel ; les compteurs doivent être calés sur l'état réel du jour J |
 | 6 | Arbitrer le **moment de l'attribution** dans le parcours de la demande (recommandation : à la **validation** du dossier, pas à la saisie) | Attribuer trop tôt consommerait des numéros pour des demandes abandonnées |
 
-### Proposition de codes région (à confirmer)
+### Codes région (vérifiés à 99 % contre les données réelles — confirmation officielle attendue)
 
 | Code | Région | Chef-lieu | | Code | Région | Chef-lieu |
 |---|---|---|---|---|---|---|
