@@ -164,12 +164,12 @@ dans SIGATT). Voici ce que chacun apporte, et son état de préparation :
 
 | Référentiel | Rôle dans la génération | État actuel |
 |---|---|---|
-| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** | ⚠️ Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
+| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** |  Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
 | **Type / genre du véhicule** (véhicule automobile, remorque, semi-remorque, motocycle, tricycle, quadricycle) | Distingue **voiture / moto** (ordre des caractères, choix du compteur) et fixe le **nombre de plaques** à produire : 2 pour une voiture, 1 pour une moto ou remorque | Présent ; le nombre de plaques n'est pas encore renseigné — à compléter |
-| **Régions** (13 régions, codes 01 à 13) | Les **2 chiffres de fin** pour les séries ordinaires, d'après la résidence du propriétaire | ⚠️ La table existe mais est **vide** — à alimenter (liste proposée en fin de document) |
+| **Régions** (13 régions, codes 01 à 13) | Les **2 chiffres de fin** pour les séries ordinaires, d'après la résidence du propriétaire |  La table existe mais est **vide** — à alimenter (liste proposée en fin de document) |
 | **Pays mandataires** (~61 pays, chacun avec un code : France=01, Ghana=02, …) | Le **code de mission** pour les plaques `CD`, `CC` et `CMD` | Présent et **validé contre les données réelles** |
 | **Organisations internationales** (~65 organisations : PNUD=01, UEMOA=27, HCR=35, …) | Le **code d'organisation** pour les plaques `IN` | Présent et **validé contre les données réelles** (ex. les 308 véhicules `IN 27` du système actuel = l'UEMOA, dont le siège est à Ouagadougou) |
-| **Régimes douaniers** (mise à la consommation, franchise temporaire, admission temporaire…) | La **mention** de fin de plaque : rien, `IT` ou `AT` | ⚠️ La table existe mais est vide — à alimenter avec la correspondance régime → mention |
+| **Régimes douaniers** (mise à la consommation, franchise temporaire, admission temporaire…) | La **mention** de fin de plaque : rien, `IT` ou `AT` |  La table existe mais est vide — à alimenter avec la correspondance régime → mention |
 
 À noter : un même dossier de demande contient déjà toutes ces informations (statut du propriétaire,
 véhicule et son type, adresse de résidence, pays ou organisation le cas échéant, régime douanier).
