@@ -1,6 +1,6 @@
 # Dossier de soutenance — Stratégie de génération des numéros d'immatriculation
 
-> **Objet** : défendre la stratégie devant le lead technique. Chaque décision est présentée au
+> **Objet** Chaque décision est présentée au
 > format : **la décision → pourquoi → les alternatives étudiées → pourquoi elles ont été écartées
 > → la preuve**. Les éléments complexes ou flous sont démystifiés en fin de document, suivis des
 > questions pièges probables et de leurs réponses courtes.
