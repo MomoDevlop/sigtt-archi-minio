@@ -15,7 +15,7 @@
 >   propriétaire, région de résidence, dates, motifs, carte précédente…) — extractions détaillées de
 >   mars-avril 2024, utilisées pour les **validations croisées** du §2.5 ;
 > - Le code existant : `sigatt-backend` (socle CRUD, dossier d'immatriculation SIGATT-233),
->   `sigatt-desktop` (saisie hors-ligne + synchronisation bulk), référentiels et seeds SQL ;
+>   canaux de saisie (centralisation des demandes avant traitement), référentiels et seeds SQL ;
 > - Les **user stories** du produit (`user-stories/SIGATT_Jira_Import_VF_2026-07-07_Sprint_Juillet.csv`,
 >   218 récits / 9 modules — dont US-CG-001…023 pour l'immatriculation et **US-CG-008** qui fixe
 >   l'attribution automatique du numéro à la validation).
@@ -39,7 +39,7 @@ Le projet manipule déjà **deux numérotations distinctes** — la confusion se
 |---|---|---|
 | Exemple | `OUAG 0000 210726 0001` | `2089 G3 03` |
 | Rôle | Identifiant de la **demande** (traçabilité de saisie) | Identité **du véhicule** (la plaque physique) |
-| Qui le génère | Backend (`DossierImmatriculationNumberHelper`) **ou** desktop (`NumeroGenerator`, hors-ligne) | **Exclusivement le serveur central** (décision clé, cf. §6.1) |
+| Qui le génère | Le canal de saisie, à l'enregistrement de la demande (`DossierImmatriculationNumberHelper` côté backend) | **Exclusivement le serveur central, à la VALIDATION** (décision clé, cf. §6.1) |
 | Espace d'unicité | (site, machine, jour) → pas de coordination nécessaire | **National** → coordination obligatoire |
 | Durée de vie | Le temps du traitement de la demande | **Permanente** (décret art. 3), jamais recyclée |
 
@@ -121,7 +121,7 @@ d'attribution legacy **différente**. Constats vérifiés :
    `DD`, `DE`, `DF`, `DG`, `DH` — **la première lettre reste `D`, la seconde avance dans l'alphabet
    privé**. Cette observation tranche empiriquement la mécanique du « croisement deux à deux » de
    l'art. 27 : `…9Z → DD → DE → DF → DG → DH → (DJ)…`. Front actuel observé : `1DH` (max 6615).
-4. ** L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
+4. **⚠️ L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
    (`L…Z` × chiffres 1-9 et `DD…DG` × 1-9) sont remplis **en parallèle**, chacun à ~33 % de densité,
    avec des numéros **éparpillés sur tout l'espace 0001-9999** (ex. `5M` présent : 0001, 0007, 0009,
    0010, 0014… max 9999). Ce motif est la signature de **stocks de plaques pré-imprimées** écoulés
@@ -200,28 +200,28 @@ Même moteur, mêmes cinq couches anti-doublon, deux lignes de compteur.
 | `VehiculeEntity.numeroImmatriculationProvisoire` | Existe (saisie libre) | Plaques provisoires W/WW (phase ultérieure) |
 | `DossierImmatriculationEntity.nouvelleImmatriculation` / `immatriculationPrecedente` | Existent (saisis, non exploités) | Déclencheur du tirage / ré-immatriculation |
 | Patron **séquence sous verrou pessimiste** (`DossierImmatriculationSequenceEntity` + `findAndLockByPrefix` `@Lock(PESSIMISTIC_WRITE)` + retries) | Existant, éprouvé (testé sous concurrence par `testCreateConcurrentNominalCases`) | **Répliqué à l'identique** pour les compteurs de séries (cf. §7) |
-| `StatutProprietaire.immatCode` |  Seed **erroné** : énumération naïve `A→N` (Privé=`B`, Police=`D`, Org. internationale=`I` — contredit le décret : B=Collectivités, P=Police, I=lettre interdite) | **À re-seeder** avec les codes de catégorie réglementaires (cf. annexe B) — c'est la clé de résolution de la stratégie |
+| `StatutProprietaire.immatCode` | ⚠️ Seed **erroné** : énumération naïve `A→N` (Privé=`B`, Police=`D`, Org. internationale=`I` — contredit le décret : B=Collectivités, P=Police, I=lettre interdite) | **À re-seeder** avec les codes de catégorie réglementaires (cf. annexe B) — c'est la clé de résolution de la stratégie |
 | `PaysMandataire.code` / `OrganisationInternationale.code` | Corrects (validés à 100 % contre prod) | Suffixe mission des plaques CD/CC/IN/CMD |
 | `TypeVehicule` / `CategorieVehicule` (genre 1 = Motocycle) | Existent (`nombrePlaque` non seedé) | Distinction automobile/cycle (ordre lettre-chiffre) + nombre de plaques à produire (2 auto / 1 moto-remorque, décret art. 4) |
 | `RegimeDouanier` | Référentiel existant, **non seedé** | Source de la mention `IT`/`AT` — ajouter la colonne de correspondance (cf. §8, fichier 9) |
 | `Region` (referentiel-service) | Entité avec `code`, **table non seedée** | Source du code région `01-13` — seed à créer |
 | Table `parametre` (referentiel-service, clé/valeur + écran admin) | Existante | Paramètres de l'algorithme (activation, marge d'amorçage) |
 
-### 3.2 Desktop (`sigatt-desktop`) — la contrainte hors-ligne
+### 3.2 Les canaux de saisie — toutes les demandes sont CENTRALISÉES avant traitement
 
-Analyse complète du repo (JavaFX 25 + SQLite, sync par lots de 20 vers
-`POST /immatriculation-service/api/dossier-immatriculation/bulk`) :
+Les demandes entrent dans SIGATT par plusieurs canaux (saisie en ligne par l'usager, saisie au
+guichet — y compris en mode hors-ligne avec synchronisation différée). Point d'architecture
+décisif pour la génération : **la synchronisation ne fait qu'acheminer les dossiers saisis vers le
+système central — elle ne déclenche AUCUNE attribution.** Un dossier synchronisé arrive au central
+sans numéro d'immatriculation et le reste jusqu'à sa validation. Conséquences :
 
-- **Le desktop ne génère AUCUNE plaque** — il ne connaît que le numéro de **dossier**
-  (`NumeroGenerator` : `siteCode + codeMachine + ddMMyy + séquence journalière locale`), attribué à la
-  soumission. Aucune table, aucun champ, aucune logique de plaque.
-- La corrélation de la réponse bulk se fait **par numéro de dossier**
-  (`DossierSyncSuccess { id, numero }` / `DossierSyncFailure { numeroDossier, errorMessage, dateErreur }`).
-- Le desktop peut **rejouer** un lot (reprise après coupure : `IN_PROGRESS → PENDING_PUSH`) : le serveur
-  doit être **idempotent** par dossier.
-- Conséquence architecturale : la génération de plaque peut (et doit) être **100 % centrale**, il n'y a
-  aucun générateur concurrent à coordonner côté clients. Si l'on veut afficher la plaque sur le poste de
-  saisie, il faudra **étendre le contrat de retour** (`DossierSyncSuccess`) — champ additionnel, rétrocompatible.
+- **Un seul point d'attribution** : l'action « Valider » du validateur SIM (US-CG-008), quel que
+  soit le canal d'origine de la demande.
+- **Aucun générateur à coordonner côté clients** : aucun canal de saisie ne fabrique de numéro
+  d'immatriculation — seul le numéro de **dossier** (identifiant de traitement, cf. §1) est créé
+  à la saisie.
+- **Restitution** : le demandeur obtient le numéro en consultant son dossier validé — aucun
+  contrat d'échange spécifique à prévoir pour la génération.
 
 ---
 
@@ -263,7 +263,7 @@ valider par la fiche métier) :
 | Nature de demande (US) | Effet sur le numéro d'immatriculation |
 |---|---|
 | Première mise en circulation (US-CG-007) | **Tirage d'un nouveau numéro** à la validation |
-| Renouvellement papier/polycarbonate (US-CG-011/012) | Numéro conservé ;  si l'ancienne plaque est au **format pré-2017** → tirage d'un numéro au format actuel (art. 50) ; si statut/régime modifiés à cette occasion → tirage |
+| Renouvellement papier/polycarbonate (US-CG-011/012) | Numéro conservé ; ⚠️ si l'ancienne plaque est au **format pré-2017** → tirage d'un numéro au format actuel (art. 50) ; si statut/régime modifiés à cette occasion → tirage |
 | Changement d'adresse (US-CG-013) | **Recomposition** : seuls les 2 chiffres de région changent — aucun tirage (art. 3) |
 | Changement de propriétaire (US-CG-014/015) | Numéro conservé si même statut et même régime ; **tirage** si le statut ou le régime douanier change (le formulaire capture le nouveau statut/régime) |
 | Gage / levée de gage (US-CG-016/017) | Numéro conservé (mention du créancier sur la carte) |
@@ -274,7 +274,8 @@ valider par la fiche métier) :
 
 ## 4. Principes directeurs de la stratégie
 
-1. **Génération exclusivement côté serveur central** — jamais en desktop, jamais en front. Un seul
+1. **Génération exclusivement côté serveur central, à la validation** — jamais sur un canal de
+   saisie, jamais en front : toutes les demandes sont centralisées AVANT traitement. Un seul
    point d'attribution = un seul espace à protéger.
 2. **Un numéro n'est jamais calculé, il est ALLOUÉ** : l'état des compteurs vit en base de données,
    modifié sous verrou. On ne déduit jamais « le prochain numéro » d'un `MAX()` sur les véhicules
@@ -351,7 +352,7 @@ CREATE INDEX idx_immat_delivree_dossier ON immatriculation_delivree (dossier_id)
 **`cle_unicite`** matérialise la clé réglementaire, construite par la stratégie :
 
 - séries ordinaires : `GROUPE-TEL-QU'AFFICHÉ|NNNN` → `G3|2089` (voiture) et `1DJ|0001` (moto).
-   Le groupe **tel qu'affiché** (et non normalisé) est indispensable : `0739 D1 03` (voiture) et
+  ⚠️ Le groupe **tel qu'affiché** (et non normalisé) est indispensable : `0739 D1 03` (voiture) et
   `0739 1D 03` (moto) sont deux plaques physiques distinctes — une clé normalisée les ferait
   collisionner (faille détectée à la simulation, dès l'import du legacy). La région n'y figure
   PAS (art. 3 : elle peut changer) ;
@@ -369,7 +370,7 @@ qu'un rejeu). Faille détectée à la conception du simulateur, comportement val
 > (1) l'unicité réglementaire porte sur `(NNNN, GROUPE)` alors que la chaîne complète contient la
 > région (qui peut changer) ; (2) le registre absorbe la **migration des 353 000 numéros legacy**
 > sans créer de véhicules fantômes ; (3) il historise les plaques même après ré-immatriculation
-> (jamais de recyclage) ; (4) il neutralise les collisions venant des saisies `INTERNE`/bulk.
+> (jamais de recyclage) ; (4) il neutralise les collisions venant des saisies `INTERNE`.
 
 ### 5.3 Modifications d'entités existantes
 
@@ -388,9 +389,10 @@ Aucune couche ne se suffit à elle seule ; leur superposition rend le doublon **
 
 ### Couche 1 — Un seul générateur (architectural)
 
-Toute attribution passe par `ServiceGenerationImmatriculation` côté serveur central. Le desktop, le
-back-office et le bulk **reçoivent** des plaques, ils n'en fabriquent jamais. (Vérifié : le desktop n'a
-aucune logique de plaque ; sa saisie hors-ligne ne porte que le numéro de dossier.)
+Toute attribution passe par `ServiceGenerationImmatriculation` côté serveur central, déclenchée
+**uniquement** par l'action de validation (US-CG-008). Les canaux de saisie ne créent que des
+dossiers — tous centralisés avant traitement (cf. §3.2) — et n'inventent jamais de numéro ; ils
+n'en reçoivent pas non plus à la saisie : le numéro n'existe qu'après validation.
 
 ### Couche 2 — Sérialisation par verrou pessimiste (concurrence)
 
@@ -408,11 +410,13 @@ viole `uk_immatriculation_cle_unicite` → l'algorithme **avance le compteur et 
 tentatives comme le patron existant). Le doublon ne peut pas atteindre la base, même en cas de bug
 du compteur : c'est PostgreSQL qui a le dernier mot.
 
-### Couche 4 — Idempotence par dossier (rejeu réseau)
+### Couche 4 — Idempotence par dossier (double soumission de la validation)
 
-Le desktop rejoue les lots interrompus. Avant tout tirage : si le registre contient déjà une ligne
-`dossier_id = <dossier>` (ou si le véhicule du dossier porte déjà une plaque), **on renvoie la plaque
-existante au lieu d'en tirer une nouvelle**. Un même dossier ne peut jamais consommer deux numéros.
+Sur une interface web, la double soumission n'est pas un cas d'école : double clic du validateur,
+reprise après un timeout alors que la première transaction a abouti, deux sessions ouvertes sur le
+même dossier. Avant tout tirage : si le registre contient déjà une ligne `dossier_id = <dossier>`
+(ou si le véhicule du dossier porte déjà une plaque), **on renvoie la plaque existante au lieu
+d'en tirer une nouvelle**. Un même dossier ne peut jamais consommer deux numéros.
 
 ### Couche 5 — Calage à la bascule + validation des saisies (données)
 
@@ -425,7 +429,7 @@ existante au lieu d'en tirer une nouvelle**. Un même dossier ne peut jamais con
   ne peut donc PAS rattraper une **erreur de relevé** (un front sous-estimé produirait des doublons
   physiques avec le parc existant). Les garde-fous sont le **PV de relevé contradictoire**, la
   **marge**, et le caractère automatisé du relevé (requête SQL, pas de saisie manuelle — §10).
-- Toute plaque **saisie** (source `INTERNE`, champ `immatriculationPrecedente`, bulk) est validée par
+- Toute plaque **saisie** (source `INTERNE`, champ `immatriculationPrecedente`) est validée par
   les expressions régulières par catégorie (cf. §11) puis **enregistrée au registre** : l'espace
   protégé se reconstitue au fil de l'eau. L'import de l'historique reste possible **plus tard, en
   option différée** (recherche historique, contrôle d'existence des anciennes plaques) sans aucun
@@ -549,7 +553,7 @@ construireContexte(dossier) :
 ```
 attribuer(contexte) :                                      # @Transactional (REQUIRED)
   1. IDEMPOTENCE : si registre.findByDossierId(ctx.dossierId) existe
-       -> retourner la plaque déjà attribuée               # rejeu bulk/web sans double consommation (S31)
+       -> retourner la plaque déjà attribuée               # double soumission de la validation (S31)
 
   2. cas particulier CMD (pas de compteur) :
        cleUnicite = "CMD|" + codeMission
@@ -606,7 +610,7 @@ recomposerRegion(vehicule, nouvelleRegion) :
   vehicule.immatriculation = ligne.numeroComplet           # l'ancienne combinaison n'est PAS libérée (S34)
 ```
 
-**Bloc 6 — Validation d'une plaque saisie (INTERNE / bulk / plaque précédente)**
+**Bloc 6 — Validation d'une plaque saisie (INTERNE / plaque précédente)**
 
 ```
 validerPlaqueSaisie(plaque, contexte) :
@@ -616,12 +620,11 @@ validerPlaqueSaisie(plaque, contexte) :
     violation -> erreur "immatriculation.deja.existante" (sauf si rattachée au même véhicule)
 ```
 
-**Choix transactionnel** : la façade s'exécute dans la **transaction de l'appelant** (`REQUIRED`).
-Si le traitement du dossier échoue après l'allocation, tout est annulé ensemble — ni plaque
-orpheline, ni compteur incrémenté (le « trou » n'apparaît que si l'échec survient APRÈS commit,
-cas rare et légal — S32). Dans le flux bulk, chaque dossier est déjà isolé en `REQUIRES_NEW` par
-`SingleImportRunner` (lib-commons) : l'attribution en hérite. Le verrou sur la ligne de compteur
-ne dure que le temps du traitement d'un dossier (millisecondes).
+**Choix transactionnel** : la façade s'exécute dans la **transaction de l'appelant** (`REQUIRED`)
+— celle de l'API de validation. Si le traitement du dossier échoue après l'allocation, tout est
+annulé ensemble — ni plaque orpheline, ni compteur incrémenté (le « trou » n'apparaît que si
+l'échec survient APRÈS commit, cas rare et légal — S32). Le verrou sur la ligne de compteur ne
+dure que le temps de la validation d'un dossier (millisecondes).
 
 ### 7.4 Avancement des groupes (`AlphabetSeriePrivee`)
 
@@ -733,36 +736,30 @@ sequenceDiagram
     GEN-->>GEN: retourne "8763 T1 03" (tentatives bornées à 50)
 ```
 
-### 8.5 Flux complet desktop → synchronisation bulk → plaque (avec rejeu)
+### 8.5 De la saisie à la plaque — centralisation, puis validation (avec idempotence)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant DK as Desktop (SQLite, hors-ligne)
-    participant GW as API Gateway
-    participant BULK as POST /dossier-immatriculation/bulk
-    participant RUN as SingleImportRunner (REQUIRES_NEW / dossier)
+    participant SAI as Canaux de saisie (en ligne, guichets)
+    participant CEN as Système central (dossiers en attente)
+    participant VAL as Validateur SIM (interface web)
     participant GEN as ServiceGeneration
     participant REG as Registre
 
-    Note over DK: saisie hors-ligne, numéro de DOSSIER local<br/>(site+machine+jour+seq). AUCUNE plaque générée.
-    DK->>GW: push lot de 20 dossiers SUBMITTED
-    GW->>BULK: bulk(dossiers)
-    loop pour chaque dossier
-        BULK->>RUN: importSingle(dossier)
-        RUN->>GEN: attribuer(contexte du dossier)
-        GEN->>REG: findByDossierId(...)
-        alt premier traitement
-            GEN->>GEN: allocation sous verrou (cf. 8.1)
-            GEN-->>RUN: plaque "2091 G3 09"
-        else rejeu (coupure réseau, lot renvoyé)
-            REG-->>GEN: plaque déjà attribuée à ce dossier
-            GEN-->>RUN: MÊME plaque "2091 G3 09" (idempotence)
-        end
-        RUN-->>BULK: succès {id, numero, immatriculation}
+    Note over SAI: saisie de la demande — numéro de DOSSIER créé,<br/>AUCUN numéro d'immatriculation
+    SAI->>CEN: transmission de la demande (centralisation)
+    Note over CEN: le dossier attend son traitement<br/>(réception, vérification) — toujours SANS plaque
+    VAL->>GEN: action « Valider » (US-CG-008)
+    GEN->>REG: findByDossierId(...)
+    alt première validation
+        GEN->>GEN: allocation sous verrou (cf. 8.1)
+        GEN-->>VAL: plaque "2091 G3 09"
+    else validation soumise deux fois (double clic, reprise après timeout)
+        REG-->>GEN: plaque déjà attribuée à ce dossier
+        GEN-->>VAL: MÊME plaque "2091 G3 09" (idempotence)
     end
-    BULK-->>DK: BulkSyncResultDto (succès + rejets détaillés)
-    Note over DK: extension de contrat : DossierSyncSuccess porte<br/>la plaque -> affichable sur le poste de saisie.
+    Note over SAI,CEN: le demandeur voit le numéro en consultant<br/>son dossier validé — la génération n'implique<br/>aucun échange spécifique avec les canaux de saisie
 ```
 
 ### 8.6 Mutation de région — recomposition sans nouveau tirage (art. 3)
@@ -808,7 +805,7 @@ réelles seront recalées à la ré-extraction de bascule, cf. §10) : `PRIVE|VE
 | 11 | La série privée atteint **9999** (`G3` pleine) | `PRIVE` | avancement dans la même transaction | `9999 G3 xx` puis **`0001 G4 xx`** |
 | 12 | Le véhicule de l'exemple 1 **déménage à Bobo** | mutation (art. 3) | aucun tirage | `2089 G3 03` → **`2089 G3 09`** (recomposition ; `(G3, 2089)` reste consommé) |
 | 13 | Le véhicule de l'exemple 1 est **racheté par un taxi** (changement de statut) | ré-immatriculation | `TRANSPORT\|VEHICULE` : 8762→8763 | **`8763 T1 03`** — nouveau tirage complet ; l'ancienne plaque n'est JAMAIS recyclée |
-| 14 | Rejeu du lot bulk contenant le dossier de l'exemple 2 (coupure réseau) | idempotence | aucun tirage | **`2090 G3 09`** — la même plaque est renvoyée, pas de double consommation |
+| 14 | La validation du dossier de l'exemple 2 est soumise deux fois (double clic, reprise après timeout) | idempotence | aucun tirage | **`2090 G3 09`** — la même plaque est renvoyée, pas de double consommation |
 
 ---
 
@@ -825,7 +822,7 @@ génération continue à partir d'eux. Déroulé :
    - les fronts ordinaires **voitures** (`PRIVE|VEHICULE` → dernier groupe + dernier numéro, ex.
      `G3;2088` — et les catégories A/B/C/P/T) ;
    - les fronts ordinaires **motos** (mêmes familles, support CYCLE) ;
-   -  **les maxima PAR MISSION diplomatique × bande** (`CD/CC/IN` × mission × service/personnel) —
+   - ⚠️ **les maxima PAR MISSION diplomatique × bande** (`CD/CC/IN` × mission × service/personnel) —
      la simulation en a dénombré **163** : impossible à relever manuellement, une seule requête
      `GROUP BY` suffit.
    Le fichier est validé par **PV contradictoire** (DGTTM + exploitant legacy) : c'est LA pièce
@@ -854,7 +851,7 @@ génération continue à partir d'eux. Déroulé :
 
 ---
 
-## 11. Validation des plaques saisies (INTERNE / bulk / plaque précédente)
+## 11. Validation des plaques saisies (INTERNE / plaque précédente)
 
 Toute plaque **entrée** dans le système (au lieu d'être générée) est validée puis enregistrée au registre.
 Expressions régulières par famille (dérivées des art. 9-36 ; `RR` = `0[1-9]|1[0-3]`) :
@@ -895,7 +892,7 @@ risque de collision).
 | 5 | **Ordre du croisement deux lettres** : ~~inconnu~~ → **résolu empiriquement** par `prod-moto.txt` (première lettre fixe, seconde avançant dans l'alphabet privé : `DD→DE→DF→DG→DH→DJ…`) | Confirmation DGTTM de la poursuite (`DJ…DZ` puis `ED…`) — la mécanique est isolée dans `AlphabetSeriePrivee` |
 | 6 | **Motos** : hypothèse des **stocks pré-imprimés PROUVÉE** (corrélation numéro↔date ≈ 0, cf. §2.5) et **arbitrage désormais CHIFFRÉ par simulation** (§18) : continuité `DH1` = **7,7 % de conflits physiques** sur les plaques de stock posées après bascule, série vierge `DJ1` = **0 conflit** — reste la validation formelle du métier ; obtenir une ré-extraction **CSV sans Excel** ; définir la transition (stocks posés après bascule → saisie INTERNE au registre) | Cf. §2.4, §2.5, §10 et §18 |
 | 7 | **Périmètre W/WW et immatriculations particulières** (`GOUVERNEUR 01`) | Hors phase 1 ; le pattern Strategy les accueillera sans refonte |
-| 8 | **Retour de la plaque au desktop** : étendre `DossierSyncSuccess {id, numero}` d'un champ `immatriculation` + colonne d'affichage côté desktop | À planifier avec l'équipe desktop (rétrocompatible) |
+| 8 | **Restitution du numéro au demandeur** après validation | Par consultation du dossier validé — aucun contrat d'échange spécifique à la génération |
 | 9 | **Correction du seed `immat_code`** (annexe B) : impacte un référentiel déjà en dev | À coordonner (données existantes éventuelles) |
 | 10 | **Fraîcheur de `prod.txt`** : date d'extraction et procédure de ré-extraction avant bascule | Cf. §10.3 |
 
@@ -925,7 +922,7 @@ risque de collision).
 10. Contrainte `unique` sur `vehicule.immatriculation` ; validation regex des saisies +
     enregistrement au registre.
 11. Point d'appel : intégration à `DossierImmatriculationServiceImpl` (à l'étape de validation
-    du futur workflow — décision #3) ; extension du retour bulk (décision #8).
+    du futur workflow — décision #3).
 12. Rôles Keycloak (`immatriculation-core-roles.json`) si un endpoint d'attribution manuelle est exposé.
 
 **Tests (mêmes patrons que l'existant)**
@@ -984,7 +981,7 @@ Valeurs **effectivement produites par le job de calage simulé** sur les extract
 La **liste exhaustive des 12 + 163 valeurs** (et des 24 plaques `CMD` existantes à insérer au
 registre) est dans **`releve-bascule-valeurs-initiales.md`**, document généré par script
 (`simulation/genere_releve_reference.py`) — à régénérer au jour J sur le relevé à l'arrêt.
- Correction issue de ce calcul : les valeurs diplomatiques citées précédemment (44, 308)
+⚠️ Correction issue de ce calcul : les valeurs diplomatiques citées précédemment (44, 308)
 étaient des comptes de lignes, pas des maxima — les exemples `0045 CD 01` / `0309 IN 27` des
 documents restent illustratifs.
 
@@ -1023,7 +1020,7 @@ changement de propriétaire/renouvellement=CONDITIONNEL_STATUT_REGIME,
 banalisation=TIRAGE_SERIE_PRIVEE, levée=TIRAGE_SERIE_STATUT) devient ainsi un **paramétrage
 administrable** : une nouvelle nature de demande future n'exige aucun redéploiement.
 
->  **RÉALISÉ le 22/07/2026** : enum `EffetSurNumero` créé dans `sigatt.commons.enums` ;
+> ✅ **RÉALISÉ le 22/07/2026** : enum `EffetSurNumero` créé dans `sigatt.commons.enums` ;
 > colonne `effet_numero` ajoutée à `TypeDemandeEntity` (+ les 3 DTO `typeDemande` de lib-commons) ;
 > seed **`03_type_demande.sql`** créé avec la catégorie « Immatriculation de véhicule » et les
 > **14 natures des US-CG-007/011-023**, chacune avec son effet (montants/délais = 0, provisoires).
@@ -1085,7 +1082,7 @@ La base des tests de la phase 1 et de la recette. Étiquettes : **[U]** test uni
 |---|---|---|
 | S29 | 10 tirages concurrents (5 threads) sur la même série → 10 numéros distincts consécutifs (copie de `testCreateConcurrentNominalCases`) | I |
 | S30 | Numéro suivant déjà présent au registre (délivré après l'extraction) → sauté, le suivant est attribué | I |
-| S31 | Rejeu du même dossier (bulk renvoyé après coupure) → LA MÊME plaque est retournée, compteur inchangé | I+R |
+| S31 | Validation du même dossier soumise deux fois (double clic, reprise après timeout) → LA MÊME plaque est retournée, compteur inchangé | I+R |
 | S32 | Échec du traitement APRÈS allocation (rollback) → ni plaque ni incrément persistés ; échec après commit → trou assumé | I |
 | S33 | 50 collisions consécutives (registre saturé artificiellement) → `CONFLICT` propre, pas de boucle infinie | I |
 
@@ -1123,22 +1120,24 @@ La base des tests de la phase 1 et de la recette. Étiquettes : **[U]** test uni
 | P5 | **Fichier de calage** relevé par requête SQL à l'**arrêt de l'ancien système** (fronts voitures + motos + les 163 maxima par mission diplomatique × bande) + **PV contradictoire** — remplace les ré-extractions massives (décision : pas d'import de l'historique) | Métier / DSI legacy | Le calage des compteurs — pièce critique de la bascule |
 | P6 | Seeds à créer/corriger : `immat_code` (coordination — référentiel déjà livré), 13 régions, `nombre_plaque`, `mention_serie`, `effet_numero` | Équipe technique | Le moteur (phase 2) |
 | P7 | Décision DH1 vs **DJ1** pour les motos (D4) | Métier DGTTM | L'amorçage moto |
-| P8 | Extension du retour bulk (`DossierSyncSuccess` + plaque) et écran desktop associé | Équipes backend + desktop | Le retour de la plaque aux guichets (non bloquant) |
+| P8 | Vérification des immatriculations déjà saisies dans `vehicule.immatriculation` (purge des doublons éventuels) avant de poser la contrainte unique | Équipe technique | La ceinture de sécurité en base (non bloquant) |
 
 ### 17.2 Ce que l'ÉQUIPE TECHNIQUE doit comprendre / clarifier
 
 1. **Le verrou pessimiste exige une transaction active** : `findAndLockByCleSerie` appelé hors
    `@Transactional` échoue — le moteur est une façade transactionnelle, jamais un utilitaire statique.
-2. **Bulk = `REQUIRES_NEW` par dossier** (`SingleImportRunner`) : un échec d'attribution rejette
-   UN dossier sans annuler le lot ; l'idempotence par `dossierId` est ce qui rend le rejeu sûr.
+2. **Point d'appel unique** : l'attribution n'est déclenchée QUE par l'API de validation centrale
+   — jamais pendant la synchronisation/centralisation des saisies. Un dossier synchronisé arrive
+   au central SANS numéro et le reste jusqu'à sa validation ; l'idempotence par `dossierId`
+   protège contre la double soumission de la validation.
 3. **Pas de méthode publique `final`** dans les services proxifiés (CGLIB) ; Javadoc pour le
    checkstyle « design for extension ».
 4. **Toute modification des DTO/enums impose de réinstaller `lib-commons`** (`-am`).
 5. La **contrainte unique sur `vehicule.immatriculation`** doit être posée après vérification des
    données déjà saisies (le champ est libre aujourd'hui — doublons possibles à purger avant).
-6. Le **numéro de dossier** (desktop, site+machine+jour) et la **plaque** sont deux espaces
-   distincts — ne jamais réutiliser `DossierImmatriculationNumberHelper` pour la plaque (le patron
-   est copié, pas partagé).
+6. Le **numéro de dossier** (créé à la saisie, site+machine+jour) et la **plaque** sont deux
+   espaces distincts — ne jamais réutiliser `DossierImmatriculationNumberHelper` pour la plaque
+   (le patron est copié, pas partagé).
 7. Les finders custom du registre doivent filtrer `deleted = false` (règle soft-delete du projet) —
    mais les lignes du registre ne sont **jamais** soft-deletées (l'unicité doit survivre à tout).
 8. Clarifier avec l'architecte : l'API de validation (P1) vivra-t-elle dans
