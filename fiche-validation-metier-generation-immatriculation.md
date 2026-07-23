@@ -126,8 +126,8 @@ l'**arrêté conjoint Transports / Affaires étrangères** — à fournir pour v
 | R7 | Le **chef de mission diplomatique** a droit à **un seul** véhicule au format `CMD` ; toute seconde demande est refusée. | ☐ Validé ☐ À corriger |
 | R8 | **Motos : le nouveau système démarre sur une série neuve (`DJ`)**, jamais utilisée. Motif : les plaques motos de l'ancien système étaient pré-fabriquées par lots — un numéro « libre » peut correspondre à une plaque en stock (fait prouvé par l'analyse des données). **Chiffré par simulation** : reprendre la file existante provoquerait ~8 % de doublons physiques sur les plaques de stock posées après la bascule ; la série neuve en provoque zéro. | ☐ Validé ☐ À corriger |
 | R9 | Les **numéros non utilisés** (trous) de l'ancien système ne sont **jamais réattribués**. | ☐ Validé ☐ À corriger |
-| R10 | **Un dossier = un numéro** : si un dossier est renvoyé deux fois (incident réseau), il reçoit le même numéro. Le numéro est attribué **quand le validateur SIM valide la demande** sur l'interface web centrale (conforme US-CG-008), pas à la saisie. | ☐ Validé ☐ À corriger |
-| R11 | Seul le **système central** attribue les numéros ; les postes de saisie (desktop, guichets) reçoivent le numéro en retour, ils n'en créent jamais. | ☐ Validé ☐ À corriger |
+| R10 | **Un dossier = un numéro** : si la validation d'un dossier est soumise deux fois (double clic, incident réseau), il reçoit le même numéro. Le numéro est attribué **quand le validateur SIM valide la demande** sur l'interface web centrale (conforme US-CG-008), jamais à la saisie. | ☐ Validé ☐ À corriger |
+| R11 | Seul le **système central** attribue les numéros, au moment de la validation ; les canaux de saisie (en ligne, guichets) ne créent que des dossiers — toutes les demandes sont **centralisées avant traitement**, aucun numéro n'est créé à la saisie. | ☐ Validé ☐ À corriger |
 | R12 | L'« immatriculation précédente » d'un dossier peut être au **format d'avant 2017** (ex. `11 AA5302`) : elle est acceptée et conservée telle quelle. | ☐ Validé ☐ À corriger |
 
 ---
@@ -194,7 +194,7 @@ elles seront relevées à la date exacte de mise en service.)*
 | P5 | Relevé des derniers numéros à l'**arrêt de l'ancien système** (toutes séries + chaque ambassade/organisation, par requête) + **PV contradictoire signé** — pièce critique : la numérotation SIGATT continue à partir de ces valeurs | DGTTM / exploitant legacy | ☐ Fourni ☐ En attente |
 | P6 | Remplissage des tables de paramétrage (13 régions, nombre de plaques, codes de série corrigés) | Équipe projet | ☐ Fourni ☐ En attente |
 | P7 | Décision moto : série `DH` (continuité stricte — simulation : ~8 % de doublons physiques sur les stocks) ou série neuve `DJ` (recommandé — simulation : 0 conflit) | DGTTM | ☐ Fourni ☐ En attente |
-| P8 | Affichage du numéro sur les postes de guichet (évolution desktop — non bloquant) | Équipe projet | ☐ Fourni ☐ En attente |
+| P8 | Vérification des immatriculations déjà saisies dans SIGATT (aucun doublon préexistant) avant l'activation | Équipe projet | ☐ Fourni ☐ En attente |
 
 ---
 
