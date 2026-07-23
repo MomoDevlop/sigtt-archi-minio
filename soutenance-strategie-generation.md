@@ -1,6 +1,6 @@
 # Dossier de soutenance — Stratégie de génération des numéros d'immatriculation
 
-> **Objet** Chaque décision est présentée au
+> **Objet** : défendre la stratégie devant le lead technique. Chaque décision est présentée au
 > format : **la décision → pourquoi → les alternatives étudiées → pourquoi elles ont été écartées
 > → la preuve**. Les éléments complexes ou flous sont démystifiés en fin de document, suivis des
 > questions pièges probables et de leurs réponses courtes.
@@ -29,7 +29,7 @@ stratégie = résoudre(catégorie)             ordinaire | diplomatique | chef d
 attribuer(contexte)                         idempotence → verrou du compteur → avancer
    │                                        → INSERT registre (la base tranche) → numéro
    ▼
-vehicule.immatriculation = numéro  →  COMMIT (tout ou rien)  →  réponse
+vehicule.immatriculation = numéro  →  COMMIT (tout ou rien)  →  réponse au validateur
 ```
 
 ---
@@ -38,20 +38,23 @@ vehicule.immatriculation = numéro  →  COMMIT (tout ou rien)  →  réponse
 
 ### D1 — La génération est 100 % centrale (serveur)
 
-**Décision** : seul le serveur central attribue des numéros ; le desktop et le back-office en
-*reçoivent*, jamais n'en fabriquent.
+**Décision** : seul le serveur central attribue des numéros, au moment de la validation ; les
+canaux de saisie (en ligne, guichets — y compris hors-ligne) ne créent que des **dossiers**, tous
+**centralisés avant traitement**. La synchronisation des saisies n'attribue jamais rien : un
+dossier arrive au central sans numéro et le reste jusqu'à sa validation.
 **Pourquoi** : l'espace de numérotation est **national et séquentiel** (décret art. 9 : 0001→9999
 par série) — il ne se partitionne pas. Un seul point d'attribution = un seul espace à protéger.
 **Alternatives écartées** :
-- *Le desktop génère hors-ligne* → impossible sans partitionner l'espace (contraire au décret) ;
-  et vérifié dans le code du desktop : il ne génère que le numéro de **dossier**
-  (`site+machine+jour+séquence` — partitionnable, lui), aucune logique de plaque n'y existe.
+- *Générer à la saisie, sur le canal* → impossible sans partitionner l'espace national (contraire
+  au décret) ; seul le numéro de **dossier** (identifiant de traitement, partitionné par
+  site+machine+jour — partitionnable, lui) est créé à la saisie.
 - *Des plages réservées par site/région* → les données réelles prouvent que le compteur est
   national (zéro numéro multi-région sur 353 000 plaques voitures ; plages régionales
   entrelacées sur tout l'espace). Réserver des plages créerait des trous artificiels massifs et
   violerait la continuité observée.
 **Preuve** : analyse de `prod.txt` (test « numéros multi-régions » = 0 sur toutes les séries) ;
-audit du repo `sigatt-desktop`.
+architecture de centralisation des demandes (tous les canaux convergent au central avant
+traitement).
 
 ### D2 — L'attribution a lieu à la VALIDATION, pas à la saisie
 
@@ -115,8 +118,7 @@ isolément.
 - *Un `switch` monolithique* → ~200 lignes, intestable par morceaux, rouvert à chaque évolution.
 - *Héritage (une sous-classe de moteur par famille)* → fige la hiérarchie, complique l'injection
   et le partage du cycle verrou/registre qui, lui, est commun.
-**Preuve** : le projet vient d'adopter le même choix côté desktop (refactor des formulaires en
-Strategy) ; les 3 stratégies simulées couvrent les 44 scénarios sans un seul `if` par nature.
+**Preuve** : les 3 stratégies simulées couvrent les 44 scénarios sans un seul `if` par nature.
 
 ### D6 — Le compteur = UNE LIGNE EN BASE par série (`serie_immatriculation`)
 
@@ -199,11 +201,13 @@ correction).
 
 ### D10 — Idempotence garantie par une contrainte `UNIQUE(dossier_id)`
 
-**Décision** : le registre porte aussi `dossier_id UNIQUE` ; un rejeu (bulk desktop, double clic)
-relit la plaque déjà attribuée au lieu d'en tirer une nouvelle.
-**Pourquoi** : le desktop **rejoue réellement** les lots interrompus (vérifié dans son code :
-`IN_PROGRESS → PENDING_PUSH` au redémarrage) ; et deux traitements simultanés du même dossier
-passent tous deux le contrôle applicatif « déjà servi ? » avant d'allouer.
+**Décision** : le registre porte aussi `dossier_id UNIQUE` ; une validation soumise deux fois
+(double clic, reprise après timeout, deux sessions ouvertes sur le même dossier) relit la plaque
+déjà attribuée au lieu d'en tirer une nouvelle.
+**Pourquoi** : sur une interface web, la double soumission n'est pas un cas d'école (double clic,
+timeout HTTP suivi d'un nouvel essai alors que la première transaction a abouti) ; et deux
+traitements simultanés du même dossier passent tous deux le contrôle applicatif « déjà servi ? »
+avant d'allouer — seule la contrainte ferme cette fenêtre.
 **Alternative écartée** : contrôle applicatif seul → la course reste ouverte (fenêtre entre le
 check et l'insert) → deux numéros pour une moto. Seule la contrainte ferme la fenêtre.
 **Preuve** : faille identifiée à la conception du simulateur ; scénario S31 (rejeu → même plaque,
@@ -214,9 +218,7 @@ compteur intact) validé en campagne, y compris sous 2 % de rejeux injectés dan
 **Décision** : compteur + registre + `vehicule.immatriculation` + statut du dossier commitent
 ensemble, dans la transaction de l'appelant.
 **Pourquoi** : si la validation échoue à mi-chemin, tout s'annule — ni plaque orpheline, ni
-compteur incrémenté pour rien. Le verrou ne vit que quelques millisecondes. Dans le bulk, chaque
-dossier est déjà isolé en `REQUIRES_NEW` par `SingleImportRunner` (lib-commons) : un dossier en
-échec n'annule pas le lot.
+compteur incrémenté pour rien. Le verrou ne vit que quelques millisecondes.
 **Alternative écartée** : `REQUIRES_NEW` sur l'attribution (verrou plus court) → un rollback du
 dossier laisserait une plaque attribuée à un dossier inexistant ; le gain de latence est
 négligeable au débit réel.
@@ -283,7 +285,7 @@ simulation est identique dans les deux modes.
 - **Série ← `statutProprietaire.immatCode`** : le statut porte son code de catégorie (validé par
   les données : COLLECT→B à 98 %, POLICE→P à 91 %…). Alternative écartée : déduire la série du
   type d'usager ailleurs dans le dossier → redondant et incohérent avec le décret (art. 2 : le
-  statut détermine la série).  Le seed actuel (A→N naïf) est à corriger — connu, tracé.
+  statut détermine la série). ⚠️ Le seed actuel (A→N naïf) est à corriger — connu, tracé.
 - **Support ← `typeVehicule`** (codes motocycle/tricycle/quadricycle → CYCLE) : seule information
   fiable du dossier sur la nature du véhicule ; `nombre_plaque` (2/1) portée par le même
   référentiel (art. 4).
