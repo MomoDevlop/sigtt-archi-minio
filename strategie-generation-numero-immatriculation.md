@@ -121,7 +121,7 @@ d'attribution legacy **différente**. Constats vérifiés :
    `DD`, `DE`, `DF`, `DG`, `DH` — **la première lettre reste `D`, la seconde avance dans l'alphabet
    privé**. Cette observation tranche empiriquement la mécanique du « croisement deux à deux » de
    l'art. 27 : `…9Z → DD → DE → DF → DG → DH → (DJ)…`. Front actuel observé : `1DH` (max 6615).
-4. **⚠️ L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
+4. ** L'attribution legacy moto n'est PAS un compteur séquentiel propre** : environ 135 groupes
    (`L…Z` × chiffres 1-9 et `DD…DG` × 1-9) sont remplis **en parallèle**, chacun à ~33 % de densité,
    avec des numéros **éparpillés sur tout l'espace 0001-9999** (ex. `5M` présent : 0001, 0007, 0009,
    0010, 0014… max 9999). Ce motif est la signature de **stocks de plaques pré-imprimées** écoulés
@@ -200,7 +200,7 @@ Même moteur, mêmes cinq couches anti-doublon, deux lignes de compteur.
 | `VehiculeEntity.numeroImmatriculationProvisoire` | Existe (saisie libre) | Plaques provisoires W/WW (phase ultérieure) |
 | `DossierImmatriculationEntity.nouvelleImmatriculation` / `immatriculationPrecedente` | Existent (saisis, non exploités) | Déclencheur du tirage / ré-immatriculation |
 | Patron **séquence sous verrou pessimiste** (`DossierImmatriculationSequenceEntity` + `findAndLockByPrefix` `@Lock(PESSIMISTIC_WRITE)` + retries) | Existant, éprouvé (testé sous concurrence par `testCreateConcurrentNominalCases`) | **Répliqué à l'identique** pour les compteurs de séries (cf. §7) |
-| `StatutProprietaire.immatCode` | ⚠️ Seed **erroné** : énumération naïve `A→N` (Privé=`B`, Police=`D`, Org. internationale=`I` — contredit le décret : B=Collectivités, P=Police, I=lettre interdite) | **À re-seeder** avec les codes de catégorie réglementaires (cf. annexe B) — c'est la clé de résolution de la stratégie |
+| `StatutProprietaire.immatCode` |  Seed **erroné** : énumération naïve `A→N` (Privé=`B`, Police=`D`, Org. internationale=`I` — contredit le décret : B=Collectivités, P=Police, I=lettre interdite) | **À re-seeder** avec les codes de catégorie réglementaires (cf. annexe B) — c'est la clé de résolution de la stratégie |
 | `PaysMandataire.code` / `OrganisationInternationale.code` | Corrects (validés à 100 % contre prod) | Suffixe mission des plaques CD/CC/IN/CMD |
 | `TypeVehicule` / `CategorieVehicule` (genre 1 = Motocycle) | Existent (`nombrePlaque` non seedé) | Distinction automobile/cycle (ordre lettre-chiffre) + nombre de plaques à produire (2 auto / 1 moto-remorque, décret art. 4) |
 | `RegimeDouanier` | Référentiel existant, **non seedé** | Source de la mention `IT`/`AT` — ajouter la colonne de correspondance (cf. §8, fichier 9) |
@@ -263,7 +263,7 @@ valider par la fiche métier) :
 | Nature de demande (US) | Effet sur le numéro d'immatriculation |
 |---|---|
 | Première mise en circulation (US-CG-007) | **Tirage d'un nouveau numéro** à la validation |
-| Renouvellement papier/polycarbonate (US-CG-011/012) | Numéro conservé ; ⚠️ si l'ancienne plaque est au **format pré-2017** → tirage d'un numéro au format actuel (art. 50) ; si statut/régime modifiés à cette occasion → tirage |
+| Renouvellement papier/polycarbonate (US-CG-011/012) | Numéro conservé ;  si l'ancienne plaque est au **format pré-2017** → tirage d'un numéro au format actuel (art. 50) ; si statut/régime modifiés à cette occasion → tirage |
 | Changement d'adresse (US-CG-013) | **Recomposition** : seuls les 2 chiffres de région changent — aucun tirage (art. 3) |
 | Changement de propriétaire (US-CG-014/015) | Numéro conservé si même statut et même régime ; **tirage** si le statut ou le régime douanier change (le formulaire capture le nouveau statut/régime) |
 | Gage / levée de gage (US-CG-016/017) | Numéro conservé (mention du créancier sur la carte) |
@@ -984,7 +984,7 @@ Valeurs **effectivement produites par le job de calage simulé** sur les extract
 La **liste exhaustive des 12 + 163 valeurs** (et des 24 plaques `CMD` existantes à insérer au
 registre) est dans **`releve-bascule-valeurs-initiales.md`**, document généré par script
 (`simulation/genere_releve_reference.py`) — à régénérer au jour J sur le relevé à l'arrêt.
-⚠️ Correction issue de ce calcul : les valeurs diplomatiques citées précédemment (44, 308)
+ Correction issue de ce calcul : les valeurs diplomatiques citées précédemment (44, 308)
 étaient des comptes de lignes, pas des maxima — les exemples `0045 CD 01` / `0309 IN 27` des
 documents restent illustratifs.
 
@@ -1023,7 +1023,7 @@ changement de propriétaire/renouvellement=CONDITIONNEL_STATUT_REGIME,
 banalisation=TIRAGE_SERIE_PRIVEE, levée=TIRAGE_SERIE_STATUT) devient ainsi un **paramétrage
 administrable** : une nouvelle nature de demande future n'exige aucun redéploiement.
 
-> ✅ **RÉALISÉ le 22/07/2026** : enum `EffetSurNumero` créé dans `sigatt.commons.enums` ;
+>  **RÉALISÉ le 22/07/2026** : enum `EffetSurNumero` créé dans `sigatt.commons.enums` ;
 > colonne `effet_numero` ajoutée à `TypeDemandeEntity` (+ les 3 DTO `typeDemande` de lib-commons) ;
 > seed **`03_type_demande.sql`** créé avec la catégorie « Immatriculation de véhicule » et les
 > **14 natures des US-CG-007/011-023**, chacune avec son effet (montants/délais = 0, provisoires).
