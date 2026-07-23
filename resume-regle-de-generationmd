@@ -13,7 +13,9 @@
 >   ici a été **vérifiée contre ces données réelles**, pas seulement lue dans les textes.
 >
 > La version technique (architecture, base de données, diagrammes) est dans
-> `strategie-generation-numero-immatriculation.md`.
+> `strategie-generation-numero-immatriculation.md`. La **fiche de validation à faire signer par
+> les acteurs métier** (valeurs, référentiels et règles avec cases à cocher) est dans
+> `fiche-validation-metier-generation-immatriculation.md`.
 
 ---
 
@@ -22,8 +24,8 @@
 Le système manipule deux numéros très différents, et la confusion est fréquente :
 
 - **Le numéro de DOSSIER** (ex. `OUAG 0000 210726 0001`) : c'est le numéro de la **demande**,
-  comme un numéro de ticket. Il est créé dès la saisie (au guichet ou sur l'application desktop),
-  sert à suivre le dossier, et n'a aucune existence légale sur le véhicule.
+  comme un numéro de ticket. Il est créé dès la saisie, sert à suivre le dossier, et n'a aucune
+  existence légale sur le véhicule.
 - **Le numéro d'IMMATRICULATION** (ex. `2089 G3 03`) : c'est l'**identité du véhicule**, celle qui
   figure sur la plaque et la carte grise. Il est réglementé par décret, unique au niveau national,
   et attribué **une seule fois pour toujours**.
@@ -165,7 +167,7 @@ dans SIGATT). Voici ce que chacun apporte, et son état de préparation :
 
 | Référentiel | Rôle dans la génération | État actuel |
 |---|---|---|
-| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** |  Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
+| **Statut du propriétaire** (14 valeurs : État, Privé, Police, Collectivités, Parapublics, Transporteurs publics, Mission/Personnel diplomatique, Mission/Personnel consulaire, Organisation internationale/son personnel, Chef de mission, Particulière) | Détermine la **série** et, pour les diplomatiques, la **plage service/personnel** | ⚠️ Présent, mais les codes de série enregistrés ne correspondent pas au décret — **à corriger** avant démarrage |
 | **Type / genre du véhicule** (véhicule automobile, remorque, semi-remorque, motocycle, tricycle, quadricycle) | Distingue **voiture / moto** (ordre des caractères, choix du compteur) et fixe le **nombre de plaques** à produire : 2 pour une voiture, 1 pour une moto ou remorque | Présent ; le nombre de plaques n'est pas encore renseigné — à compléter |
 | **Régions** (13 régions, codes 01 à 13) | Les **2 chiffres de fin** pour les séries ordinaires, d'après la résidence du propriétaire |  La table existe mais est **vide** — à alimenter. La correspondance code↔région a été **vérifiée à 99 %** en croisant, sur un million de motos, le code de la plaque et la région de résidence déclarée (liste en fin de document) |
 | **Pays mandataires** (~61 pays, chacun avec un code : France=01, Ghana=02, …) | Le **code de mission** pour les plaques `CD`, `CC` et `CMD` | Présent et **validé contre les données réelles** |
@@ -180,7 +182,15 @@ véhicule et son type, adresse de résidence, pays ou organisation le cas éché
 
 ## 6. Le parcours d'une attribution — ce qui est vérifié, dans l'ordre
 
-Quand un dossier arrive à l'étape d'immatriculation, le système déroule ce parcours :
+Le déclencheur est défini par les user stories du produit (US-CG-008) : c'est **l'action
+« Valider » du validateur SIM**, sur l'interface web centrale, qui fait attribuer automatiquement
+le numéro. Le circuit complet : l'usager dépose en ligne (ou l'opérateur de saisie enregistre le
+dossier papier au guichet) → l'opérateur de réception vérifie et transmet → le **validateur**
+valide (numéro attribué), rejette ou renvoie en correction (motif obligatoire, notification) →
+la carte part en production. Les demandes qui ne nécessitent pas de nouveau numéro suivent le
+même circuit, simplement sans tirage.
+
+À la validation, le système déroule ce parcours :
 
 1. **Ce dossier a-t-il déjà reçu un numéro ?**
    Oui → on lui redonne **exactement le même** et on s'arrête là. (C'est la protection contre les
@@ -204,13 +214,26 @@ Quand un dossier arrive à l'étape d'immatriculation, le système déroule ce p
    après la date de reprise des données), il est **sauté automatiquement** et le suivant est essayé.
 7. **Composition finale** : numéro d'ordre + série (inversée pour une moto) + région ou code de
    mission + mention douanière éventuelle. Le numéro est inscrit au **registre national**, attaché
-   au véhicule et au dossier, et renvoyé au demandeur (y compris au poste desktop qui a saisi la
-   demande, lors de la synchronisation).
+   au véhicule et au dossier ; le demandeur le voit en consultant son dossier validé.
 
 Cas complémentaire — **une plaque saisie à la main** (reprise d'un véhicule déjà immatriculé,
 mutation entrante) : elle n'est pas générée mais **contrôlée** (le format doit correspondre à sa
 catégorie) puis **inscrite au registre national**, pour être protégée contre tout doublon futur au
 même titre qu'une plaque générée.
+
+### Quelle nature de demande déclenche quoi
+
+| Nature de demande | Effet sur le numéro |
+|---|---|
+| Première mise en circulation | **Nouveau numéro** attribué à la validation |
+| Renouvellement de la carte | Numéro conservé — sauf si l'ancienne plaque est au format d'avant 2017 (elle passe alors au format actuel) ou si le statut/régime change |
+| Changement d'adresse | Seuls les **2 chiffres de région** changent — pas de nouveau tirage |
+| Changement de propriétaire | Numéro conservé si le statut et le régime douanier ne changent pas ; **nouveau numéro** sinon |
+| Gage / levée de gage | Numéro conservé |
+| Duplicata (perte, vol) | Numéro conservé (réédition de la carte) |
+| Banalisation d'un véhicule d'État | **Nouveau numéro en série privée** (plaque banalisée) |
+| Levée de banalisation | **Nouveau numéro** dans la série du statut réel |
+| Transformation du véhicule | Numéro conservé (la série n'est pas modifiable) |
 
 ---
 
@@ -241,6 +264,12 @@ moto immatriculée par SIGATT recevra `0001 1DJ …`. Toutes les anciennes séri
 considérées comme intégralement consommées ; une plaque de stock posée après la bascule sera
 enregistrée au registre comme une plaque existante, sans conflit possible.
 
+**Ce choix a été mis à l'épreuve par simulation** (5 000 plaques de stock fictives posées après
+la bascule, mélangées à 3 000 nouvelles immatriculations) : en reprenant la file là où elle
+s'arrête, **384 plaques de stock sur 5 000 (près de 8 %) voient leur numéro redonné à une autre
+moto** — deux motos porteraient physiquement le même numéro ; en démarrant sur la série neuve
+`DJ`, **zéro conflit**. Le chiffre est dans le rapport `simulation/rapport-simulation.md`.
+
 | En résumé | Voitures | Motos |
 |---|---|---|
 | Écriture | `2089 G3 03` (lettre d'abord) | `0042 5M 03` (chiffre d'abord) |
@@ -270,12 +299,13 @@ fond vert. Un troisième dossier, déposé par la même ambassade pour la voitur
 l'ambassadeur, passe par le format spécial : **`01 CMD`** — et si une plaque `01 CMD` existe déjà,
 le dossier est refusé, car le chef de mission n'a droit qu'à un véhicule.
 
-**« La demande moto de Ouahigouya passe deux fois. »**
-Une moto est saisie sur l'application desktop d'un guichet de Ouahigouya (région Nord = 10),
-hors connexion. À la synchronisation, le serveur attribue **`0001 1DJ 10`** — première moto du
-nouveau système, série neuve `DJ`, chiffre devant car c'est une moto. La connexion coupe avant que
-la réponse n'arrive au guichet ; le poste renvoie le même lot le lendemain. Le serveur reconnaît
-le dossier déjà servi et **renvoie le même numéro** `0001 1DJ 10` : aucun numéro n'a été gaspillé,
+**« La validation de la demande moto de Ouahigouya est soumise deux fois. »**
+Une moto est saisie au guichet de Ouahigouya (région Nord = 10) ; la demande est transmise au
+système central, où elle attend son traitement — **sans aucun numéro à ce stade**. Quand le
+validateur clique « Valider », le système attribue **`0001 1DJ 10`** — première moto du nouveau
+système, série neuve `DJ`, chiffre devant car c'est une moto. La connexion du validateur coupe
+avant l'affichage de la réponse ; il soumet à nouveau la validation. Le système reconnaît le
+dossier déjà servi et **renvoie le même numéro** `0001 1DJ 10` : aucun numéro n'a été gaspillé,
 aucun doublon créé.
 
 ### 8.2 Tableau récapitulatif
@@ -300,7 +330,7 @@ aucun doublon créé.
 | 16 | Le véhicule n°1 déménage à Bobo | `2089 G3 03` → **`2089 G3 09`** | Seule la région change |
 | 17 | Le véhicule n°1 est revendu à un particulier de Bobo | **inchangé** | Même statut, même région : rien ne bouge |
 | 18 | Le véhicule n°1 devient un taxi | **`8763 T1 03`** | Changement de statut → ré-immatriculation ; `2089 G3` reste consommé à vie |
-| 19 | Renvoi du même dossier (coupure réseau) | **le même numéro** | Un dossier = un numéro, toujours |
+| 19 | Validation du même dossier soumise deux fois (double clic, coupure réseau) | **le même numéro** | Un dossier = un numéro, toujours |
 
 ---
 
@@ -309,28 +339,38 @@ aucun doublon créé.
 Quatre protections indépendantes, superposées — il faudrait qu'elles échouent **toutes en même
 temps** pour produire un doublon :
 
-1. **Un seul guichet d'attribution.** Seul le serveur central attribue des numéros. Les postes de
-   saisie (desktop, back-office) envoient des dossiers et **reçoivent** un numéro en réponse ;
-   aucun numéro n'est jamais inventé localement. (Vérifié : l'application desktop actuelle ne
-   contient aucune logique de plaque.)
+1. **Un seul guichet d'attribution.** Seul le serveur central attribue des numéros, et uniquement
+   au moment de la **validation** de la demande. Les canaux de saisie (en ligne, guichets)
+   ne font qu'enregistrer des dossiers, qui sont tous **centralisés avant traitement** ;
+   aucun numéro n'est jamais créé à la saisie.
 2. **Une seule file d'attente à la fois.** Quand deux demandes arrivent au même instant pour la
    même série, la base de données les sert **strictement l'une après l'autre** — la deuxième
    attend son tour quelques millisecondes et reçoit le numéro suivant. Cela reste vrai même si
    plusieurs serveurs tournent en parallèle.
-3. **Le registre national.** Chaque numéro attribué est inscrit dans un registre qui contient
-   aussi **tout l'historique de l'ancien système** (1,4 million de numéros repris). Ce registre
-   **refuse physiquement** l'inscription d'un numéro déjà présent : même en cas de bug ou de
-   reprise de données incomplète, un numéro déjà pris ne peut pas ressortir — il est sauté et le
-   suivant est attribué.
-4. **Un dossier = un numéro.** Le numéro est attaché au dossier qui l'a demandé. Si le même dossier
-   revient (double clic, coupure réseau, resynchronisation), le système renvoie le numéro déjà
-   attribué au lieu d'en tirer un nouveau.
+3. **Le registre national.** Chaque numéro qui existe dans SIGATT (attribué par le système ou
+   saisi pour un véhicule déjà immatriculé) est inscrit dans un registre qui **refuse
+   physiquement** l'inscription d'un numéro déjà présent : même en cas de bug, un numéro déjà
+   pris ne peut pas ressortir — il est sauté et le suivant est attribué.
+4. **Un dossier = un numéro.** Le numéro est attaché au dossier qui l'a demandé. Si la validation
+   du même dossier est soumise deux fois (double clic, coupure réseau au moment de la validation),
+   le système renvoie le numéro déjà attribué au lieu d'en tirer un nouveau.
 
-Et une cinquième précaution propre au démarrage : la **reprise de l'existant**. Avant l'activation,
-les extractions des deux parcs sont rechargées à jour (celle des motos devra être refaite : le
-fichier actuel a été tronqué par la limite du tableur Excel), les compteurs voitures sont calés
-au-delà du dernier numéro connu avec une marge de sécurité, et les motos démarrent sur une série
-neuve. Les « trous » de l'historique ne sont **jamais comblés**.
+**L'ensemble a été validé par une campagne de simulation** (22/07/2026) : plus de **20 000
+attributions simulées** en s'appuyant sur l'historique réel des deux parcs, 53 contrôles sur 53
+réussis — dont
+2 000 attributions lancées en parallèle sur 8 fils d'exécution qui ont produit une suite
+parfaitement continue de numéros, sans aucun doublon. Rapport : `simulation/rapport-simulation.md`.
+
+Et une cinquième précaution propre au démarrage : le **calage à la bascule**. Le jour J,
+l'**ancien système est arrêté**, puis les derniers numéros de chaque série sont **relevés
+automatiquement** (une requête informatique, jamais une saisie manuelle — il y a plus de 160
+compteurs à caler en comptant chaque ambassade et organisation) et consignés dans un
+**procès-verbal signé** par la DGTTM et l'exploitant de l'ancien système. Ces valeurs sont
+configurées dans SIGATT, une petite marge de sécurité est ajoutée, et la numérotation **continue
+exactement là où l'ancien système s'est arrêté** — sauf les motos, qui démarrent sur la série
+neuve `DJ` (à cause des plaques en stock). Les « trous » de l'historique ne sont **jamais
+comblés**. L'historique complet n'est pas rechargé dans SIGATT au démarrage : il pourra l'être
+plus tard, pour la recherche des anciennes plaques, sans impact sur la numérotation.
 
 ---
 
@@ -347,7 +387,46 @@ neuve. Les « trous » de l'historique ne sont **jamais comblés**.
 
 ---
 
-## 11. Les décisions attendues de la DGTTM avant la mise en service
+## 11. Ce qui manque aujourd'hui — les prérequis avant démarrage
+
+Le moteur de génération peut être construit dès maintenant, mais **huit prérequis** conditionnent
+sa mise en service. Qui porte quoi :
+
+| # | Ce qui manque | Qui le fournit |
+|---|---|---|
+| P1 | **L'écran de validation des demandes** (celui où le validateur clique « Valider » — c'est lui qui déclenche l'attribution, US-CG-008) est en cours de construction | Équipe projet |
+| P2 | **La fiche de validation signée** (statuts→séries, codes région, effets par nature de demande) | DGTTM |
+| P3 | **L'arrêté conjoint** des codes des ambassades et organisations internationales | DGTTM / Affaires étrangères |
+| P4 | **La liste des régimes douaniers** et la mention associée (aucune / IT / AT) — la table est vide | DGTTM / Douanes |
+| P5 | **Le relevé des derniers numéros à l'arrêt de l'ancien système** (toutes les séries, y compris chaque ambassade/organisation — par requête informatique) + le **procès-verbal signé** — c'est la pièce critique de la bascule | DGTTM / exploitant du système actuel |
+| P6 | **Le remplissage des tables de paramétrage** : codes des 13 régions (table vide), nombre de plaques par type de véhicule, correction des codes de série du statut propriétaire | Équipe projet (sur la base de la fiche signée) |
+| P7 | **La décision moto** : reprendre à la suite du dernier lot (`DH`) ou démarrer sur la série neuve `DJ` (recommandé) | DGTTM |
+| P8 | La **vérification des immatriculations déjà saisies** dans SIGATT (aucun doublon préexistant) avant l'activation | Équipe projet (non bloquant) |
+
+## 12. Ce que chacun doit comprendre — et les cas à dérouler en recette
+
+**Côté métier, deux idées à intérioriser** : (1) le compteur est **national** — il ne faut jamais
+demander de « réserver des plages de numéros » pour un site ou une région, cela n'existe pas dans
+ce système ; (2) un numéro n'est **jamais recyclé** — les trous sont normaux et définitifs.
+**Et cinq questions à trancher** : que faire quand une série catégorielle sera pleine (`A9`,
+`T99` — le décret est muet) ? que faire si une ambassade dépasse 999 véhicules de service ? le
+code région vient-il de la résidence du propriétaire (recommandé) ou du site de dépôt ? la plaque
+banalisée est-elle bien tirée en série privée ? toute plaque d'avant 2017 rencontrée lors d'un
+renouvellement passe-t-elle au format actuel ?
+
+**Côté équipe projet** : le moteur est central et transactionnel (un seul point d'attribution :
+la validation), les canaux de saisie ne génèrent jamais rien — toutes les demandes sont
+centralisées avant traitement — et le registre national a toujours le dernier mot.
+
+**Les dix cas que le métier devra dérouler en recette** :
+deux voitures validées coup sur coup à Ouaga et Bobo (numéros consécutifs, régions différentes) ·
+une admission temporaire (mention AT) · une ambassade : service puis diplomate (deux plages) ·
+un deuxième véhicule de chef de mission (refus) · la première moto (`0001 1DJ …`) ·
+un déménagement (seule la région change) · une revente sans changement de statut (rien ne change) ·
+une revente à un taxi (nouveau numéro) · un duplicata (même numéro) · la validation du même
+dossier soumise deux fois (le même numéro revient, pas de doublon).
+
+## 13. Les décisions attendues de la DGTTM avant la mise en service
 
 | # | Décision | Pourquoi c'est nécessaire |
 |---|---|---|
@@ -356,7 +435,7 @@ neuve. Les « trous » de l'historique ne sont **jamais comblés**.
 | 3 | Valider la **correction des codes de série** du référentiel Statut du propriétaire | Les valeurs actuellement enregistrées ne correspondent pas au décret (ex. Police enregistrée « D » alors que le décret dit « P ») |
 | 4 | Confirmer le **démarrage des motos sur la série neuve `DJ`** (l'existence des stocks de plaques pré-fabriquées n'est plus une hypothèse : elle est **prouvée** par l'analyse des dates — les numéros d'une même série sont posés dans le désordre sur 2019-2024) | Évite tout conflit avec les plaques en stock |
 | 5 | Fournir des **ré-extractions complètes et récentes** des deux parcs (format brut, sans passage par Excel) à la date de bascule | Les extractions actuelles datent de **mars-avril 2024** et les fichiers motos sont tronqués à la limite d'Excel ; les compteurs doivent être calés sur l'état réel du jour J |
-| 6 | Arbitrer le **moment de l'attribution** dans le parcours de la demande (recommandation : à la **validation** du dossier, pas à la saisie) | Attribuer trop tôt consommerait des numéros pour des demandes abandonnées |
+| 6 | ~~Arbitrer le moment de l'attribution~~ → **tranché par les user stories** (US-CG-008 : le numéro est attribué automatiquement quand le validateur valide la demande, sur l'interface web centrale) | Reste à valider le tableau « quelle nature de demande déclenche quoi » (§6) |
 
 ### Codes région (vérifiés à 99 % contre les données réelles — confirmation officielle attendue)
 
