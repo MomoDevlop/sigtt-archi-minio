@@ -59,7 +59,7 @@ pas une région mais le **code de l'ambassade ou de l'organisation** (ex. `IN 27
 | **Organisation internationale** | Le code de l'organisation pour les plaques `IN` (ex. UEMOA = 27) |
 | **Régime douanier** | La mention `IT` ou `AT` (ou rien) |
 
-⚠️ Trois référentiels doivent être complétés avant le démarrage : les **codes des 13 régions**
+ Trois référentiels doivent être complétés avant le démarrage : les **codes des 13 régions**
 (table vide aujourd'hui), la correspondance **régime douanier → mention**, et la **correction des
 codes série** du référentiel Statut du propriétaire (les valeurs actuelles ne correspondent pas au décret).
 
