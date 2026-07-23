@@ -29,7 +29,7 @@ stratégie = résoudre(catégorie)             ordinaire | diplomatique | chef d
 attribuer(contexte)                         idempotence → verrou du compteur → avancer
    │                                        → INSERT registre (la base tranche) → numéro
    ▼
-vehicule.immatriculation = numéro  →  COMMIT (tout ou rien)  →  réponse (web / bulk desktop)
+vehicule.immatriculation = numéro  →  COMMIT (tout ou rien)  →  réponse
 ```
 
 ---
@@ -283,7 +283,7 @@ simulation est identique dans les deux modes.
 - **Série ← `statutProprietaire.immatCode`** : le statut porte son code de catégorie (validé par
   les données : COLLECT→B à 98 %, POLICE→P à 91 %…). Alternative écartée : déduire la série du
   type d'usager ailleurs dans le dossier → redondant et incohérent avec le décret (art. 2 : le
-  statut détermine la série). ⚠️ Le seed actuel (A→N naïf) est à corriger — connu, tracé.
+  statut détermine la série).  Le seed actuel (A→N naïf) est à corriger — connu, tracé.
 - **Support ← `typeVehicule`** (codes motocycle/tricycle/quadricycle → CYCLE) : seule information
   fiable du dossier sur la nature du véhicule ; `nombre_plaque` (2/1) portée par le même
   référentiel (art. 4).
